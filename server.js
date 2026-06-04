@@ -46,6 +46,21 @@ app.use((_, res, next) => {
   next();
 });
 
+app.use((req, res, next) => {
+  if (req.method === 'OPTIONS') {
+    res.setHeader('Access-Control-Allow-Origin', '*');
+    res.setHeader('Access-Control-Allow-Methods', 'GET,OPTIONS');
+    res.setHeader('Access-Control-Allow-Headers', 'Content-Type');
+    return res.sendStatus(204);
+  }
+
+  if (req.method === 'GET' && (req.path === '/layout-index.json' || req.path.startsWith('/products/'))) {
+    res.setHeader('Access-Control-Allow-Origin', '*');
+  }
+
+  return next();
+});
+
 const withShopifyConfig = (needsToken = false) => {
   if (!SHOPIFY_BASE_URL) {
     return { ok: false, message: 'Set SHOPIFY_STORE_DOMAIN in .env.local to enable Shopify proxy routes.' };
