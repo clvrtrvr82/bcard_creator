@@ -91,58 +91,74 @@ Add this to your Vault theme’s product template (for example, a Custom liquid 
 
 ```liquid
 <div
-   class="cardify-entry"
+   id="cardify-entry-{{ product.id }}"
    data-cardify-product-handle="{{ product.handle | escape }}"
    data-cardify-product-tags="{{ product.tags | join: '||' | escape }}"
 ></div>
 
 <script>
    (function () {
-      const mount = document.currentScript.previousElementSibling;
-      if (!mount) return;
+      const mountId = 'cardify-entry-{{ product.id }}';
 
-      const productHandle = mount.getAttribute('data-cardify-product-handle') || '';
-      const rawTags = mount.getAttribute('data-cardify-product-tags') || '';
-      const productTags = rawTags
-         .split('||')
-         .map((tag) => tag.trim().toLowerCase())
-         .filter(Boolean);
+      function renderCardifyButton() {
+         const mount = document.getElementById(mountId);
+         if (!mount) return;
 
-      if (!productHandle || !productTags.length) return;
+         const productHandle = mount.getAttribute('data-cardify-product-handle') || '';
+         const rawTags = mount.getAttribute('data-cardify-product-tags') || '';
+         const productTags = rawTags
+            .split('||')
+            .map((tag) => String(tag || '').trim().toLowerCase())
+            .filter(Boolean);
 
-      fetch('https://bcard-creator.onrender.com/layout-index.json')
-         .then((response) => {
-            if (!response.ok) throw new Error('Unable to load Cardify layout index.');
-            return response.json();
-         })
-         .then((payload) => {
-            const layouts = Array.isArray(payload?.layouts) ? payload.layouts : [];
-            const matchedTags = new Set();
+         if (!productHandle || !productTags.length) return;
 
-            layouts.forEach((layout) => {
-               const layoutTags = Array.isArray(layout?.shopifyTags) ? layout.shopifyTags : [];
-               layoutTags.forEach((tag) => {
-                  const normalized = String(tag || '').trim().toLowerCase();
-                  if (normalized && productTags.includes(normalized)) {
-                     matchedTags.add(tag);
-                  }
+         fetch('https://bcard-creator.onrender.com/layout-index.json')
+            .then((response) => {
+               if (!response.ok) throw new Error('Unable to load Cardify layout index.');
+               return response.json();
+            })
+            .then((payload) => {
+               const layouts = Array.isArray(payload && payload.layouts) ? payload.layouts : [];
+               const matchedTags = [];
+               const seen = new Set();
+
+               layouts.forEach((layout) => {
+                  const layoutTags = Array.isArray(layout && layout.shopifyTags) ? layout.shopifyTags : [];
+                  layoutTags.forEach((tag) => {
+                     const normalized = String(tag || '').trim().toLowerCase();
+                     if (!normalized || !productTags.includes(normalized) || seen.has(normalized)) {
+                        return;
+                     }
+
+                     seen.add(normalized);
+                     matchedTags.push(normalized);
+                  });
                });
+
+               if (!matchedTags.length) return;
+
+               const params = new URLSearchParams();
+               params.set('product', productHandle);
+               matchedTags.forEach((tag) => params.append('tags', tag));
+
+               mount.innerHTML = [
+                  '<a href="https://bcard-creator.onrender.com/?' + params.toString() + '"',
+                  'style="display:inline-block;padding:12px 18px;background:#111827;color:#ffffff;text-decoration:none;border-radius:10px;font-weight:600;">',
+                  'Customize Business Cards',
+                  '</a>'
+               ].join(' ');
+            })
+            .catch((error) => {
+               console.error('Cardify CTA failed:', error);
             });
+      }
 
-            if (!matchedTags.size) return;
-
-            const params = new URLSearchParams({ product: productHandle });
-            matchedTags.forEach((tag) => params.append('tags', tag));
-
-            mount.innerHTML = '' +
-               '<a href="https://bcard-creator.onrender.com/?' + params.toString() + '" ' +
-               'style="display:inline-block;padding:12px 18px;background:#111827;color:#ffffff;text-decoration:none;border-radius:10px;font-weight:600;">' +
-               'Customize Business Cards' +
-               '</a>';
-         })
-         .catch((error) => {
-            console.error(error);
-         });
+      if (document.readyState === 'loading') {
+         document.addEventListener('DOMContentLoaded', renderCardifyButton, { once: true });
+      } else {
+         renderCardifyButton();
+      }
    })();
 </script>
 ```

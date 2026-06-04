@@ -24,7 +24,7 @@ const normalizedShopDomain = SHOPIFY_STORE_DOMAIN?.replace(/^https?:\/\//i, '').
 const SHOPIFY_BASE_URL = normalizedShopDomain ? `https://${normalizedShopDomain}` : null;
 const SHOPIFY_GRAPHQL_URL = SHOPIFY_BASE_URL ? `${SHOPIFY_BASE_URL}/api/${SHOPIFY_API_VERSION}/graphql.json` : null;
 const SHOPIFY_CART_ENABLED = Boolean(SHOPIFY_GRAPHQL_URL && SHOPIFY_STOREFRONT_TOKEN);
-const SHOPIFY_TAG_LOOKUP_ENABLED = SHOPIFY_CART_ENABLED;
+const SHOPIFY_TAG_LOOKUP_ENABLED = Boolean(SHOPIFY_BASE_URL);
 const distDir = path.resolve(__dirname, 'dist');
 const publicDir = path.resolve(__dirname, 'public');
 const dataDir = path.resolve(__dirname, 'data');
@@ -134,6 +134,30 @@ const withShopifyConfig = (needsToken = false) => {
   return { ok: true };
 };
 
+const mapProductVariants = (variants) => {
+  const list = Array.isArray(variants) ? variants : [];
+  return list
+    .map((variant) => {
+      const numericId = Number(variant?.id ?? 0);
+      const rawPrice = typeof variant?.price === 'string' ? Number.parseFloat(variant.price) : Number(variant?.price ?? 0);
+      return {
+        id: Number.isFinite(numericId) ? numericId : 0,
+        title: String(variant?.title || ''),
+        price: Number.isFinite(rawPrice) ? Math.round(rawPrice * 100) : 0,
+        available: Boolean(variant?.available)
+      };
+    })
+    .filter((variant) => variant.id);
+};
+
+app.get('/api/shopify-capabilities', (_req, res) => {
+  return res.json({
+    productProxyEnabled: Boolean(SHOPIFY_BASE_URL),
+    tagLookupEnabled: SHOPIFY_TAG_LOOKUP_ENABLED,
+    cartEnabled: SHOPIFY_CART_ENABLED
+  });
+});
+
 app.get('/api/layouts', (_req, res) => {
   const brandConfigs = readStoredBrandConfigs();
   if (!brandConfigs) {
@@ -199,8 +223,8 @@ app.get('/api/shopify-products-by-tags', async (req, res) => {
   if (!SHOPIFY_TAG_LOOKUP_ENABLED) {
     return res.status(404).json({ message: 'Shopify tag lookup disabled on this host.' });
   }
-  const check = withShopifyConfig(true);
-  if (!check.ok || !SHOPIFY_GRAPHQL_URL || !SHOPIFY_STOREFRONT_TOKEN) {
+  const check = withShopifyConfig(false);
+  if (!check.ok || !SHOPIFY_BASE_URL) {
     return res.status(501).json({ message: check.message });
   }
   const tagsParam = String(req.query.tags || '').trim();
@@ -212,61 +236,45 @@ app.get('/api/shopify-products-by-tags', async (req, res) => {
     .map((tag) => tag.trim())
     .filter(Boolean);
   if (!tags.length) {
-    return res.status(400).json({ message: 'Provide one or more Shopify tags.' });
-  }
-  const queryString = tags.map((tag) => `tag:${tag}`).join(' ');
-  const graphQuery = `query ProductByTags($query: String!) {
-    products(first: 1, query: $query) {
-      edges {
-        node {
-          handle
-          title
-          variants(first: 50) {
-            edges {
-              node {
-                id
-                title
-                availableForSale
-                price: priceV2 {
-                  amount
-                  currencyCode
-                }
-              }
-            }
-          }
-        }
-      }
-    }
-  }`;
+    const upstream = await fetch(`${SHOPIFY_BASE_URL}/products.json?limit=250`, {
 
-  try {
     const upstream = await fetch(SHOPIFY_GRAPHQL_URL, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
+        'User-Agent': 'theme-vault-proxy'
+      }
         'Accept': 'application/json',
-        'X-Shopify-Storefront-Access-Token': SHOPIFY_STOREFRONT_TOKEN
       },
-      body: JSON.stringify({ query: graphQuery, variables: { query: queryString } })
-    });
+      const detail = await upstream.text();
+      console.error('Shopify tag lookup failed', detail);
+      return res.status(upstream.status).json({ message: 'Unable to query Shopify products.', detail });
     const payload = await upstream.json();
-    if (!upstream.ok) {
-      console.error('Shopify tag lookup failed', payload);
+
+    const payload = await upstream.json();
+    const products = Array.isArray(payload?.products) ? payload.products : [];
+    const matches = products.filter((product) => {
+      const productTags = String(product?.tags || '')
+        .split(',')
+        .map((tag) => tag.trim().toLowerCase())
+        .filter(Boolean);
+      return tags.every((tag) => productTags.includes(tag));
+    });
+
+    if (!matches.length) {
       return res.status(502).json({ message: 'Unable to query Shopify products.', detail: payload });
     }
-    const productNode = payload?.data?.products?.edges?.[0]?.node;
-    if (!productNode) {
-      return res.status(404).json({ message: 'No Shopify product matched those tags.' });
+
+    if (matches.length > 1) {
+      return res.status(409).json({
+        message: 'Multiple Shopify products matched those tags.',
+        handles: matches.map((product) => product.handle).filter(Boolean)
+      });
     }
-    const variants = (productNode.variants?.edges || []).map((edge) => {
-      const node = edge?.node;
-      if (!node) return null;
-      const numericId = Number(node.id?.split('/')?.pop() || 0);
-      const rawAmount = Number.parseFloat(node.price?.amount ?? '0');
-      return {
-        id: Number.isFinite(numericId) ? numericId : 0,
-        title: node.title,
-        price: Number.isFinite(rawAmount) ? Math.round(rawAmount * 100) : 0,
+
+    const product = matches[0];
+    return res.json({
+      handle: product.handle || null,
+      title: product.title || '',
+      variants: mapProductVariants(product.variants)
+    });
         available: Boolean(node.availableForSale)
       };
     }).filter((entry) => entry && entry.id);

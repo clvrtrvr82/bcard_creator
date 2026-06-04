@@ -297,6 +297,12 @@ interface ProductVariantOption {
   available: boolean;
 }
 
+interface ShopifyCapabilities {
+  productProxyEnabled: boolean;
+  tagLookupEnabled: boolean;
+  cartEnabled: boolean;
+}
+
 const formatCurrency = (price: number) => new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD' }).format(price / 100);
 
 const CustomizerScreen = ({ layout, onBack, onComplete, settings, productHandle, cartEnabled, tagLookupEnabled, isAdmin }: { layout: Layout, onBack: () => void, onComplete: (data: CardData) => void, settings: AppSettings, productHandle: string | null, cartEnabled: boolean, tagLookupEnabled: boolean, isAdmin: boolean }) => {
@@ -395,8 +401,9 @@ const CustomizerScreen = ({ layout, onBack, onComplete, settings, productHandle,
 
   useEffect(() => {
     if (!tagLookupEnabled) return;
-    if (baseProductHandle || derivedProductHandle) return;
     if (!tagLookupActive) return;
+    if (derivedProductHandle) return;
+    if (baseProductHandle && productStatus !== 'error') return;
     let cancelled = false;
     const fetchByTags = async () => {
       setProductStatus('loading');
@@ -421,7 +428,7 @@ const CustomizerScreen = ({ layout, onBack, onComplete, settings, productHandle,
     return () => {
       cancelled = true;
     };
-  }, [baseProductHandle, derivedProductHandle, layout.shopifyTags, primeProductOptions, tagLookupEnabled, tagLookupActive]);
+  }, [baseProductHandle, derivedProductHandle, layout.shopifyTags, primeProductOptions, productStatus, tagLookupEnabled, tagLookupActive]);
 
   useEffect(() => {
     setFieldErrors({});
@@ -993,6 +1000,11 @@ const MainLayout = () => {
   const [flowStep, setFlowStep] = useState(1);
   const [activeLayoutId, setActiveLayoutId] = useState<string | null>(null);
   const [initialTagApplied, setInitialTagApplied] = useState(false);
+  const [shopifyCapabilities, setShopifyCapabilities] = useState<ShopifyCapabilities>({
+    productProxyEnabled: true,
+    tagLookupEnabled: SHOPIFY_TAG_LOOKUP_ENABLED,
+    cartEnabled: SHOPIFY_CART_ENABLED
+  });
   const shopifyQueryTags = useMemo(() => getShopifyQueryTags(), []);
   const productHandle = useMemo(() => getProductHandleFromQuery(), []);
   const selectedLayout = useMemo(() => findLayoutById(brandConfigs, activeLayoutId), [brandConfigs, activeLayoutId]);
@@ -1055,6 +1067,32 @@ const MainLayout = () => {
     };
 
     hydrateLayouts();
+
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  useEffect(() => {
+    let cancelled = false;
+
+    const loadShopifyCapabilities = async () => {
+      try {
+        const response = await fetch('/api/shopify-capabilities', { credentials: 'include' });
+        if (!response.ok) return;
+        const payload = await response.json();
+        if (cancelled) return;
+        setShopifyCapabilities({
+          productProxyEnabled: Boolean(payload?.productProxyEnabled),
+          tagLookupEnabled: Boolean(payload?.tagLookupEnabled),
+          cartEnabled: Boolean(payload?.cartEnabled)
+        });
+      } catch (error) {
+        console.warn('Unable to load Shopify capabilities.', error);
+      }
+    };
+
+    loadShopifyCapabilities();
 
     return () => {
       cancelled = true;
@@ -1149,8 +1187,8 @@ const MainLayout = () => {
                 onComplete={() => alert('Design Confirmed! Please contact Theme Vault support to finalize your order.')}
                 settings={settings}
                 productHandle={productHandle}
-                cartEnabled={SHOPIFY_CART_ENABLED}
-                tagLookupEnabled={SHOPIFY_TAG_LOOKUP_ENABLED}
+                cartEnabled={shopifyCapabilities.cartEnabled}
+                tagLookupEnabled={shopifyCapabilities.tagLookupEnabled}
                 isAdmin={isAdmin}
               />
             ) : (
