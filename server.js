@@ -26,6 +26,10 @@ const SHOPIFY_GRAPHQL_URL = SHOPIFY_BASE_URL ? `${SHOPIFY_BASE_URL}/api/${SHOPIF
 const SHOPIFY_CART_ENABLED = Boolean(SHOPIFY_GRAPHQL_URL && SHOPIFY_STOREFRONT_TOKEN);
 const SHOPIFY_TAG_LOOKUP_ENABLED = SHOPIFY_CART_ENABLED;
 const distDir = path.resolve(__dirname, 'dist');
+const publicDir = path.resolve(__dirname, 'public');
+const dataDir = path.resolve(__dirname, 'data');
+const layoutsFile = path.join(dataDir, 'brand-configs.json');
+const staticLayoutIndexFile = path.join(publicDir, 'layout-index.json');
 
 if (!fs.existsSync(path.join(distDir, 'index.html'))) {
   console.error(`Missing build output at ${path.join(distDir, 'index.html')}. Run "npm run build" before starting the server.`);
@@ -40,6 +44,65 @@ const proofsDir = path.join(__dirname, 'proofs');
 if (!fs.existsSync(proofsDir)) {
   fs.mkdirSync(proofsDir, { recursive: true });
 }
+if (!fs.existsSync(dataDir)) {
+  fs.mkdirSync(dataDir, { recursive: true });
+}
+
+const readJsonFile = (filePath) => {
+  if (!fs.existsSync(filePath)) return null;
+
+  try {
+    return JSON.parse(fs.readFileSync(filePath, 'utf8'));
+  } catch (error) {
+    console.error(`Unable to parse JSON from ${filePath}`, error);
+    return null;
+  }
+};
+
+const readStoredBrandConfigs = () => {
+  const payload = readJsonFile(layoutsFile);
+  if (!payload || typeof payload !== 'object') return null;
+
+  const configs = payload.brandConfigs;
+  if (!configs || typeof configs !== 'object' || Array.isArray(configs)) {
+    return null;
+  }
+
+  return configs;
+};
+
+const readStaticLayoutIndex = () => {
+  const payload = readJsonFile(staticLayoutIndexFile);
+  if (!payload || typeof payload !== 'object') {
+    return {
+      updatedAt: new Date().toISOString(),
+      layoutCount: 0,
+      layouts: []
+    };
+  }
+
+  return payload;
+};
+
+const buildLayoutIndexPayload = (configs) => {
+  const safeConfigs = configs && typeof configs === 'object' ? configs : {};
+  const layouts = Object.values(safeConfigs).flatMap((config) => {
+    const list = Array.isArray(config?.layouts) ? config.layouts : [];
+    return list.map((layout) => ({
+      id: layout.id,
+      name: layout.name,
+      brand: layout.brand,
+      shopifyTags: Array.isArray(layout.shopifyTags) ? layout.shopifyTags : [],
+      previewImage: layout.previewImage ?? null
+    }));
+  });
+
+  return {
+    updatedAt: new Date().toISOString(),
+    layoutCount: layouts.length,
+    layouts
+  };
+};
 
 app.use((_, res, next) => {
   res.setHeader('Cache-Control', 'public, max-age=3600, must-revalidate');
@@ -70,6 +133,42 @@ const withShopifyConfig = (needsToken = false) => {
   }
   return { ok: true };
 };
+
+app.get('/api/layouts', (_req, res) => {
+  const brandConfigs = readStoredBrandConfigs();
+  if (!brandConfigs) {
+    return res.status(404).json({ message: 'No stored layouts found.' });
+  }
+
+  return res.json({ brandConfigs });
+});
+
+app.put('/api/layouts', (req, res) => {
+  const brandConfigs = req.body?.brandConfigs;
+  if (!brandConfigs || typeof brandConfigs !== 'object' || Array.isArray(brandConfigs)) {
+    return res.status(400).json({ message: 'Provide a brandConfigs object.' });
+  }
+
+  try {
+    const payload = {
+      updatedAt: new Date().toISOString(),
+      brandConfigs
+    };
+    fs.writeFileSync(layoutsFile, JSON.stringify(payload, null, 2));
+    return res.json({ ok: true, layoutCount: Object.values(brandConfigs).reduce((total, config) => total + (Array.isArray(config?.layouts) ? config.layouts.length : 0), 0) });
+  } catch (error) {
+    console.error('Unable to persist layouts file', error);
+    return res.status(500).json({ message: 'Unable to persist layouts.' });
+  }
+});
+
+app.get('/layout-index.json', (_req, res) => {
+  const storedConfigs = readStoredBrandConfigs();
+  const payload = storedConfigs ? buildLayoutIndexPayload(storedConfigs) : readStaticLayoutIndex();
+  res.setHeader('Content-Type', 'application/json; charset=UTF-8');
+  res.setHeader('Access-Control-Allow-Origin', '*');
+  return res.send(JSON.stringify(payload));
+});
 
 app.get('/products/:handle.js', async (req, res) => {
   const check = withShopifyConfig(false);

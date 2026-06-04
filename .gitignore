@@ -12,6 +12,7 @@ dist
 dist-ssr
 *.cardify-cache
 proofs
+data
 .env
 *.local
 

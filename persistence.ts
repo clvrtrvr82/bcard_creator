@@ -4,8 +4,57 @@ const DB_NAME = 'theme-vault-designer';
 const DB_VERSION = 1;
 const STORE_NAME = 'app-state';
 const LAYOUTS_KEY = 'brand-configs';
+const SERVER_LAYOUTS_ENDPOINT = '/api/layouts';
 
 const hasIndexedDb = typeof indexedDB !== 'undefined';
+
+const loadServerLayouts = async (): Promise<Record<string, BrandConfig> | null> => {
+  if (typeof fetch === 'undefined') return null;
+
+  try {
+    const response = await fetch(SERVER_LAYOUTS_ENDPOINT, {
+      headers: {
+        'Accept': 'application/json'
+      }
+    });
+
+    if (response.status === 404) {
+      return null;
+    }
+
+    if (!response.ok) {
+      throw new Error(`Unable to load server layouts: ${response.status}`);
+    }
+
+    const payload = await response.json();
+    const configs = payload?.brandConfigs;
+    if (!configs || typeof configs !== 'object') {
+      return null;
+    }
+
+    return configs as Record<string, BrandConfig>;
+  } catch (error) {
+    console.warn('Unable to load layouts from server.', error);
+    return null;
+  }
+};
+
+const persistServerLayouts = async (configs: Record<string, BrandConfig>): Promise<void> => {
+  if (typeof fetch === 'undefined') return;
+
+  const response = await fetch(SERVER_LAYOUTS_ENDPOINT, {
+    method: 'PUT',
+    headers: {
+      'Content-Type': 'application/json',
+      'Accept': 'application/json'
+    },
+    body: JSON.stringify({ brandConfigs: configs })
+  });
+
+  if (!response.ok) {
+    throw new Error(`Unable to persist server layouts: ${response.status}`);
+  }
+};
 
 const openDatabase = async (): Promise<IDBDatabase | null> => {
   if (!hasIndexedDb) return null;
@@ -26,6 +75,11 @@ const openDatabase = async (): Promise<IDBDatabase | null> => {
 };
 
 export const loadPersistedLayouts = async (): Promise<Record<string, BrandConfig> | null> => {
+  const serverLayouts = await loadServerLayouts();
+  if (serverLayouts) {
+    return serverLayouts;
+  }
+
   const database = await openDatabase();
   if (!database) return null;
 
@@ -42,6 +96,10 @@ export const loadPersistedLayouts = async (): Promise<Record<string, BrandConfig
 };
 
 export const persistLayouts = async (configs: Record<string, BrandConfig>): Promise<void> => {
+  await persistServerLayouts(configs).catch((error) => {
+    console.warn('Unable to persist layouts to server.', error);
+  });
+
   const database = await openDatabase();
   if (!database) return;
 
