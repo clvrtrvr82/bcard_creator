@@ -1,0 +1,61 @@
+{
+  "updatedAt": "2026-06-04T03:04:06.425Z",
+  "layoutCount": 5,
+  "layouts": [
+    {
+      "id": "ihg-executive",
+      "name": "Executive Platinum",
+      "brand": "IHG",
+      "shopifyTags": [
+        "card-designer",
+        "ihg-card-designer",
+        "ihg-business-card"
+      ],
+      "previewImage": null
+    },
+    {
+      "id": "hi-modern",
+      "name": "Green Field",
+      "brand": "Holiday Inn",
+      "shopifyTags": [
+        "card-designer",
+        "holiday-inn-card",
+        "hi-green-field"
+      ],
+      "previewImage": null
+    },
+    {
+      "id": "hie-impact",
+      "name": "Express Impact",
+      "brand": "Holiday Inn Express",
+      "shopifyTags": [
+        "card-designer",
+        "holiday-inn-express-card",
+        "hie-impact"
+      ],
+      "previewImage": null
+    },
+    {
+      "id": "cp-prestige",
+      "name": "Corporate Prestige",
+      "brand": "Crowne Plaza",
+      "shopifyTags": [
+        "card-designer",
+        "crowne-plaza-card",
+        "cp-prestige"
+      ],
+      "previewImage": null
+    },
+    {
+      "id": "ss-warmth",
+      "name": "Home Suite Home",
+      "brand": "Staybridge Suites",
+      "shopifyTags": [
+        "card-designer",
+        "staybridge-card",
+        "ss-warmth"
+      ],
+      "previewImage": null
+    }
+  ]
+}

@@ -1,0 +1,7 @@
+{
+  "name": "Hotel Brand Business Card Customizer",
+  "description": "A specialized business card customization tool for hotel franchises (IHG, Holiday Inn, etc.) with fixed brand-compliant layouts, live preview, and print-ready PDF generation.",
+  "requestFramePermissions": [
+    "camera"
+  ]
+}
