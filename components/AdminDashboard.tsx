@@ -1,8 +1,8 @@
-import React, { useEffect, useMemo, useState } from 'react';
+import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { AppSettings, BrandConfig, Layout } from '../types';
 import LayoutEditor from './LayoutEditor';
 import LayoutAssetsEditor from './LayoutAssetsEditor';
-import { Search, Plus, Save, Trash2, Copy } from 'lucide-react';
+import { Search, Plus, Save, Trash2, Copy, Download, Upload } from 'lucide-react';
 import { CARD_CANVAS_VERSION } from '../cardCanvas';
 
 interface AdminDashboardProps {
@@ -10,6 +10,13 @@ interface AdminDashboardProps {
   onBrandConfigsChange: (configs: Record<string, BrandConfig>) => void;
   settings: AppSettings;
   onSettingsChange: (settings: AppSettings) => void;
+}
+
+interface LayoutTransferPayload {
+  version: 1;
+  exportedAt: string;
+  brandConfigs: Record<string, BrandConfig>;
+  settings?: AppSettings;
 }
 
 const createBlankBrandConfig = (brand: string): BrandConfig => ({
@@ -42,6 +49,15 @@ const ensureBrandBucket = (clone: Record<string, BrandConfig>, brand: string) =>
     clone[brand] = createBlankBrandConfig(brand);
   }
 };
+const isRecord = (value: unknown): value is Record<string, unknown> => Boolean(value) && typeof value === 'object' && !Array.isArray(value);
+const isBrandConfigsPayload = (value: unknown): value is Record<string, BrandConfig> => {
+  if (!isRecord(value)) return false;
+  return Object.values(value).every((entry) => isRecord(entry) && Array.isArray(entry.layouts));
+};
+const mergeSettings = (current: AppSettings, incoming?: Partial<AppSettings>): AppSettings => ({
+  ...current,
+  ...(incoming || {})
+});
 
 const AdminDashboard: React.FC<AdminDashboardProps> = ({ brandConfigs, onBrandConfigsChange, settings, onSettingsChange }) => {
   const [activeTab, setActiveTab] = useState<'overview' | 'layouts' | 'assets' | 'settings'>('overview');
@@ -51,6 +67,7 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({ brandConfigs, onBrandCo
   const [message, setMessage] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [settingsForm, setSettingsForm] = useState(settings);
+  const importFileRef = useRef<HTMLInputElement>(null);
 
   const allLayouts = useMemo(() => Object.entries(brandConfigs).flatMap(([brandKey, config]) => config.layouts.map((layout) => ({ ...layout, brand: layout.brand ?? brandKey }))), [brandConfigs]);
 
@@ -191,6 +208,70 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({ brandConfigs, onBrandCo
   const handleSettingsSave = () => {
     onSettingsChange(settingsForm);
     pushMessage('Studio settings updated.');
+  };
+
+  const handleExportData = () => {
+    const payload: LayoutTransferPayload = {
+      version: 1,
+      exportedAt: new Date().toISOString(),
+      brandConfigs: cloneConfigs(brandConfigs),
+      settings
+    };
+    const blob = new Blob([JSON.stringify(payload, null, 2)], { type: 'application/json' });
+    const url = URL.createObjectURL(blob);
+    const anchor = document.createElement('a');
+    anchor.href = url;
+    anchor.download = `theme-vault-layouts-${new Date().toISOString().slice(0, 10)}.json`;
+    document.body.appendChild(anchor);
+    anchor.click();
+    document.body.removeChild(anchor);
+    URL.revokeObjectURL(url);
+    pushMessage('Layout export downloaded. Import it into the Render-hosted admin to migrate your saved assets.');
+  };
+
+  const handleImportClick = () => {
+    importFileRef.current?.click();
+  };
+
+  const handleImportData = (file?: File) => {
+    if (!file) return;
+    const reader = new FileReader();
+    reader.onload = () => {
+      try {
+        const raw = JSON.parse(String(reader.result || '{}')) as LayoutTransferPayload | Record<string, BrandConfig>;
+        const nextConfigs = isBrandConfigsPayload(raw)
+          ? raw
+          : isRecord(raw) && isBrandConfigsPayload(raw.brandConfigs)
+            ? raw.brandConfigs
+            : null;
+
+        if (!nextConfigs) {
+          pushError('Import failed. Choose a JSON file exported from the layout migration tool.');
+          return;
+        }
+
+        onBrandConfigsChange(cloneConfigs(nextConfigs));
+
+        if (isRecord(raw) && isRecord(raw.settings)) {
+          const nextSettings = mergeSettings(settings, raw.settings as Partial<AppSettings>);
+          onSettingsChange(nextSettings);
+          setSettingsForm(nextSettings);
+        }
+
+        const firstImportedLayout = Object.values(nextConfigs).flatMap((config) => config.layouts)[0];
+        setSelectedLayoutId(firstImportedLayout?.id || null);
+        setActiveTab('layouts');
+        pushMessage('Layout library imported. Render now has the same browser-saved layouts and assets from your export file.');
+      } catch (importError) {
+        console.error('Unable to import layout payload.', importError);
+        pushError('Import failed. The selected file is not valid JSON.');
+      } finally {
+        if (importFileRef.current) {
+          importFileRef.current.value = '';
+        }
+      }
+    };
+    reader.readAsText(file);
   };
 
   const totalLayouts = allLayouts.length;
@@ -346,7 +427,14 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({ brandConfigs, onBrandCo
 
   return (
     <div className="space-y-6">
-      <div className="flex flex-wrap gap-3">
+      <input
+        ref={importFileRef}
+        type="file"
+        accept="application/json,.json"
+        className="hidden"
+        onChange={(e) => handleImportData(e.target.files?.[0])}
+      />
+      <div className="flex flex-wrap items-center gap-3">
         {(
           [
             { key: 'overview', label: 'Overview' },
@@ -363,6 +451,20 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({ brandConfigs, onBrandCo
             {label}
           </button>
         ))}
+        <div className="ml-auto flex flex-wrap gap-2">
+          <button
+            onClick={handleExportData}
+            className="px-4 py-2.5 rounded-xl bg-white border border-slate-200 text-[11px] font-black uppercase tracking-[0.3em] text-slate-600 flex items-center gap-2"
+          >
+            <Download size={16} /> Export Layouts
+          </button>
+          <button
+            onClick={handleImportClick}
+            className="px-4 py-2.5 rounded-xl bg-blue-600 text-white text-[11px] font-black uppercase tracking-[0.3em] flex items-center gap-2"
+          >
+            <Upload size={16} /> Import Layouts
+          </button>
+        </div>
       </div>
       {message && <p className="text-sm font-semibold text-green-600">{message}</p>}
       {error && <p className="text-sm font-semibold text-red-500">{error}</p>}
