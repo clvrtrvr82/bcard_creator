@@ -92,11 +92,11 @@ Add this to your Vault theme’s product template (e.g., `main-product.liquid`).
 ```liquid
 {% if product.tags contains 'card-designer' %}
   <div class="cardify-entry">
-      <button class="btn btn--primary" onclick="window.location.href='http://YOUR-MAC-IP:3000?product={{ product.handle }}'">
-      Customize Business Cards
-    </button>
+      <a class="btn btn--primary" href="https://bcard-creator.onrender.com?product={{ product.handle }}">
+         Customize Business Cards
+      </a>
   </div>
 {% endif %}
 ```
 
-Swap `YOUR-MAC-IP` with whatever IP or tunnel URL you are using today, then move it back to the production domain once DNS is restored. Locksmith can continue to gate the tagged products the same way—only the destination hostname changes.
+That URL points directly at the live Render deployment. Locksmith can continue to gate the tagged products the same way because the app entry still lives on the protected product page.
