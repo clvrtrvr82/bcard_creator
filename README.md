@@ -85,6 +85,25 @@ npm run build
 ```
 Then ensure the updated `.htaccess` (in this repo) is deployed so Apache serves `dist/index.html` and `dist/assets/*`.
 
+## Public manifest vs saved admin state
+
+- `layout-index.json` is a build artifact generated from `constants.ts` during `npm run build`. The Shopify CTA reads only this public manifest.
+- Saved admin edits are separate. The dashboard persists them through `PUT /api/layouts`, and the Express server stores them in `data/brand-configs.json` for the in-app admin/designer flows.
+- Preview images are intentionally omitted from the public `layout-index.json` payload so the CTA endpoint stays small and only exposes the fields it needs for tag matching.
+
+### Clear saved server layouts
+
+- On Render, clear the persisted admin snapshot with:
+   ```bash
+   curl -X DELETE https://bcard-creator.onrender.com/api/layouts
+   ```
+- If you have shell access, deleting `data/brand-configs.json` has the same effect.
+
+### Sync saved admin layouts
+
+- The admin dashboard already supports export/import. Export the good layout set, then import it into the live Render-hosted admin to overwrite the saved server state.
+- For direct API sync, send the exported `brandConfigs` object back to `PUT /api/layouts`. That updates the saved admin state without changing the public CTA manifest.
+
 ## Shopify tag-triggered CTA
 
 Add this to your Vault theme’s product template (for example, a Custom liquid block on the product page). Shopify Liquid cannot read the layout tags stored in the app, so the snippet below fetches the live layout manifest from the app, compares it to the product’s tags, and only renders the button when there is at least one matching tag.

@@ -29,7 +29,8 @@ const distDir = path.resolve(__dirname, 'dist');
 const publicDir = path.resolve(__dirname, 'public');
 const dataDir = path.resolve(__dirname, 'data');
 const layoutsFile = path.join(dataDir, 'brand-configs.json');
-const staticLayoutIndexFile = path.join(publicDir, 'layout-index.json');
+const builtLayoutIndexFile = path.join(distDir, 'layout-index.json');
+const sourceLayoutIndexFile = path.join(publicDir, 'layout-index.json');
 
 if (!fs.existsSync(path.join(distDir, 'index.html'))) {
   console.error(`Missing build output at ${path.join(distDir, 'index.html')}. Run "npm run build" before starting the server.`);
@@ -72,7 +73,7 @@ const readStoredBrandConfigs = () => {
 };
 
 const readStaticLayoutIndex = () => {
-  const payload = readJsonFile(staticLayoutIndexFile);
+  const payload = readJsonFile(builtLayoutIndexFile) ?? readJsonFile(sourceLayoutIndexFile);
   if (!payload || typeof payload !== 'object') {
     return {
       updatedAt: new Date().toISOString(),
@@ -82,75 +83,6 @@ const readStaticLayoutIndex = () => {
   }
 
   return payload;
-};
-
-const buildLayoutIndexPayload = (configs) => {
-  const safeConfigs = configs && typeof configs === 'object' ? configs : {};
-  const layouts = Object.values(safeConfigs).flatMap((config) => {
-    const list = Array.isArray(config?.layouts) ? config.layouts : [];
-    return list.map((layout) => ({
-      id: layout.id,
-      name: layout.name,
-      brand: layout.brand,
-      shopifyTags: Array.isArray(layout.shopifyTags) ? layout.shopifyTags : [],
-      previewImage: layout.previewImage ?? null
-    }));
-  });
-
-  return {
-    updatedAt: new Date().toISOString(),
-    layoutCount: layouts.length,
-    layouts
-  };
-};
-
-const mergeLayoutIndexes = (primaryPayload, secondaryPayload) => {
-  const mergedLayouts = new Map();
-  const pushLayouts = (payload, preferExisting = false) => {
-    const layouts = Array.isArray(payload?.layouts) ? payload.layouts : [];
-    layouts.forEach((layout) => {
-      if (!layout || typeof layout !== 'object') {
-        return;
-      }
-
-      const layoutId = String(layout.id || '').trim();
-      if (!layoutId) {
-        return;
-      }
-
-      const existing = mergedLayouts.get(layoutId);
-      const nextLayout = {
-        id: layoutId,
-        name: String(layout.name || existing?.name || ''),
-        brand: String(layout.brand || existing?.brand || ''),
-        previewImage: layout.previewImage ?? existing?.previewImage ?? null,
-        shopifyTags: Array.from(new Set([
-          ...(Array.isArray(existing?.shopifyTags) ? existing.shopifyTags : []),
-          ...(Array.isArray(layout.shopifyTags) ? layout.shopifyTags : [])
-        ].map((tag) => String(tag || '').trim()).filter(Boolean)))
-      };
-
-      if (!existing) {
-        mergedLayouts.set(layoutId, nextLayout);
-        return;
-      }
-
-      mergedLayouts.set(layoutId, preferExisting ? {
-        ...nextLayout,
-        ...existing,
-        shopifyTags: nextLayout.shopifyTags
-      } : nextLayout);
-    });
-  };
-
-  pushLayouts(primaryPayload);
-  pushLayouts(secondaryPayload, true);
-
-  return {
-    updatedAt: new Date().toISOString(),
-    layoutCount: mergedLayouts.size,
-    layouts: Array.from(mergedLayouts.values())
-  };
 };
 
 app.use((_, res, next) => {
@@ -235,11 +167,21 @@ app.put('/api/layouts', (req, res) => {
   }
 });
 
+app.delete('/api/layouts', (_req, res) => {
+  try {
+    if (fs.existsSync(layoutsFile)) {
+      fs.unlinkSync(layoutsFile);
+    }
+
+    return res.json({ ok: true, message: 'Stored server layouts cleared.' });
+  } catch (error) {
+    console.error('Unable to clear layouts file', error);
+    return res.status(500).json({ message: 'Unable to clear stored layouts.' });
+  }
+});
+
 app.get('/layout-index.json', (_req, res) => {
-  const staticPayload = readStaticLayoutIndex();
-  const storedConfigs = readStoredBrandConfigs();
-  const storedPayload = storedConfigs ? buildLayoutIndexPayload(storedConfigs) : null;
-  const payload = storedPayload ? mergeLayoutIndexes(storedPayload, staticPayload) : staticPayload;
+  const payload = readStaticLayoutIndex();
   res.setHeader('Content-Type', 'application/json; charset=UTF-8');
   res.setHeader('Access-Control-Allow-Origin', '*');
   return res.send(JSON.stringify(payload));
