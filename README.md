@@ -45,7 +45,6 @@ With the Shopify features enabled, the Express server proxies both `GET /product
 2. `npm run build` (produces `dist/`)
 3. `pm2 start ecosystem.config.cjs` (note the `.cjs` extension—`pm2 start ecosystem.config.js` will fail)
 4. Tail logs with `pm2 logs card-app` and test `https://cardify.holidayprint.com`
-5. Confirm the health check: `curl https://cardify.holidayprint.com/healthz`
 
 > `clean:modules` completely removes `node_modules`.
 > `npm start` now bootstraps `server.js` and will exit early if `dist/index.html` is missing—watch PM2 logs for that guard message.

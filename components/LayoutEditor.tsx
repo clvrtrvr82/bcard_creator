@@ -9,7 +9,10 @@ const CARD_FRAME_PADDING = 16;
 const DEFAULT_CANVAS_SCALE = convertLegacyDisplayScale(1.3);
 const DEFAULT_FIELD_EDITOR_ZOOM = 1;
 const MAX_FIELD_EDITOR_ZOOM = 3;
-const POSITION_STEPS = [4, 8, 16, 32];
+const POSITION_STEPS = [1, 2, 4, 8].map((stepInPoints) => ({
+  points: stepInPoints,
+  pixels: pointsToPixels(stepInPoints)
+}));
 const HORIZONTAL_ALIGNMENT_OPTIONS = [
   { label: 'Left', value: 'left' },
   { label: 'Center', value: 'center' },
@@ -116,7 +119,7 @@ const LayoutEditor: React.FC<LayoutEditorProps> = ({ layout, onChange, settings,
   const [newFieldName, setNewFieldName] = useState('');
   const [tagInput, setTagInput] = useState('');
   const [canvasScale, setCanvasScale] = useState(DEFAULT_CANVAS_SCALE);
-  const [positionStep, setPositionStep] = useState(8);
+  const [positionStep, setPositionStep] = useState(() => pointsToPixels(1));
   const [snapToGrid, setSnapToGrid] = useState(true);
   const [showAdvancedControls, setShowAdvancedControls] = useState(false);
   const [showFieldEditorModal, setShowFieldEditorModal] = useState(false);
@@ -656,6 +659,54 @@ const LayoutEditor: React.FC<LayoutEditorProps> = ({ layout, onChange, settings,
     });
   };
 
+  const getSelectionFrames = (keys: string[]) => keys
+    .map((key) => {
+      const currentField = sideLayout.fields[key];
+      if (!currentField) return null;
+      const metrics = getFieldMetrics(key, currentField);
+      const left = currentField.left ?? 0;
+      const top = currentField.top ?? 0;
+      return {
+        key,
+        left,
+        top,
+        width: metrics.width,
+        height: metrics.height,
+        right: left + metrics.width,
+        bottom: top + metrics.height
+      };
+    })
+    .filter((value): value is NonNullable<typeof value> => Boolean(value));
+
+  const handleAlignSelection = (mode: 'left' | 'center' | 'right' | 'top' | 'middle' | 'bottom') => {
+    if (activeSelectedFieldKeys.length < 2) return;
+    const selectionFrames = getSelectionFrames(activeSelectedFieldKeys);
+    if (selectionFrames.length < 2) return;
+
+    const selectionBounds = {
+      left: Math.min(...selectionFrames.map((frame) => frame.left)),
+      right: Math.max(...selectionFrames.map((frame) => frame.right)),
+      top: Math.min(...selectionFrames.map((frame) => frame.top)),
+      bottom: Math.max(...selectionFrames.map((frame) => frame.bottom))
+    };
+    const centerX = (selectionBounds.left + selectionBounds.right) / 2;
+    const centerY = (selectionBounds.top + selectionBounds.bottom) / 2;
+
+    commitSelectedFields(activeSelectedFieldKeys, (targetField, fieldKey) => {
+      const currentField = sideLayout.fields[fieldKey];
+      if (!currentField) return;
+      const metrics = getFieldMetrics(fieldKey, currentField);
+
+      if (mode === 'left') targetField.left = normalizePositionValue(selectionBounds.left, CARD_WIDTH - metrics.width);
+      if (mode === 'center') targetField.left = normalizePositionValue(centerX - metrics.width / 2, CARD_WIDTH - metrics.width);
+      if (mode === 'right') targetField.left = normalizePositionValue(selectionBounds.right - metrics.width, CARD_WIDTH - metrics.width);
+      if (mode === 'top') targetField.top = normalizePositionValue(selectionBounds.top, CARD_HEIGHT - metrics.height);
+      if (mode === 'middle') targetField.top = normalizePositionValue(centerY - metrics.height / 2, CARD_HEIGHT - metrics.height);
+      if (mode === 'bottom') targetField.top = normalizePositionValue(selectionBounds.bottom - metrics.height, CARD_HEIGHT - metrics.height);
+      delete targetField.right;
+    });
+  };
+
   const handleMaskPresetChange = (presetId: string) => {
     if (!selectedFieldKey) return;
     if (presetId === 'custom') return;
@@ -1000,12 +1051,12 @@ const LayoutEditor: React.FC<LayoutEditorProps> = ({ layout, onChange, settings,
               <div className="flex gap-1">
                 {POSITION_STEPS.map((step) => (
                   <button
-                    key={step}
+                    key={step.points}
                     type="button"
-                    onClick={() => setPositionStep(step)}
-                    className={`px-2.5 py-1.5 rounded-lg border text-xs font-semibold ${positionStep === step ? 'border-slate-900 bg-slate-900 text-white' : 'border-slate-200 bg-white text-slate-600'}`}
+                    onClick={() => setPositionStep(step.pixels)}
+                    className={`px-2.5 py-1.5 rounded-lg border text-xs font-semibold ${positionStep === step.pixels ? 'border-slate-900 bg-slate-900 text-white' : 'border-slate-200 bg-white text-slate-600'}`}
                   >
-                    {step}px
+                    {step.points}pt
                   </button>
                 ))}
               </div>
@@ -1389,17 +1440,17 @@ const LayoutEditor: React.FC<LayoutEditorProps> = ({ layout, onChange, settings,
                         <div className="rounded-2xl border border-slate-200 bg-white p-3 space-y-2">
                           <div className="flex items-center justify-between gap-3">
                             <p className="text-xs font-semibold text-slate-500">How far should each nudge move?</p>
-                            <span className="text-xs font-black uppercase tracking-[0.24em] text-slate-400">{positionStep}px</span>
+                            <span className="text-xs font-black uppercase tracking-[0.24em] text-slate-400">{pixelsToPoints(positionStep)}pt</span>
                           </div>
                           <div className="flex flex-wrap gap-2">
                             {POSITION_STEPS.map((step) => (
                               <button
-                                key={step}
+                                key={step.points}
                                 type="button"
-                                onClick={() => setPositionStep(step)}
-                                className={`px-3 py-2 rounded-xl border text-sm font-semibold ${positionStep === step ? 'border-slate-900 bg-slate-900 text-white' : 'border-slate-200 bg-white text-slate-600'}`}
+                                onClick={() => setPositionStep(step.pixels)}
+                                className={`px-3 py-2 rounded-xl border text-sm font-semibold ${positionStep === step.pixels ? 'border-slate-900 bg-slate-900 text-white' : 'border-slate-200 bg-white text-slate-600'}`}
                               >
-                                {step}px
+                                {step.points}pt
                               </button>
                             ))}
                           </div>
@@ -1424,6 +1475,22 @@ const LayoutEditor: React.FC<LayoutEditorProps> = ({ layout, onChange, settings,
                     )}
                   </div>
                   {activeSelectedFieldKeys.length > 1 && (
+                    <div className="rounded-[24px] border border-slate-200 bg-slate-50/70 p-4 space-y-3">
+                      <div>
+                        <p className="text-sm font-black text-slate-900">Align Selection Together</p>
+                        <p className="mt-1 text-xs text-slate-500">Use the selected fields' shared bounds to line them up without relying on one active anchor.</p>
+                      </div>
+                      <div className="grid grid-cols-3 gap-2">
+                        <button type="button" onClick={() => handleAlignSelection('left')} className="px-3 py-2.5 rounded-xl border border-slate-200 bg-white text-sm font-semibold text-slate-700">Left</button>
+                        <button type="button" onClick={() => handleAlignSelection('center')} className="px-3 py-2.5 rounded-xl border border-slate-200 bg-white text-sm font-semibold text-slate-700">Center</button>
+                        <button type="button" onClick={() => handleAlignSelection('right')} className="px-3 py-2.5 rounded-xl border border-slate-200 bg-white text-sm font-semibold text-slate-700">Right</button>
+                        <button type="button" onClick={() => handleAlignSelection('top')} className="px-3 py-2.5 rounded-xl border border-slate-200 bg-white text-sm font-semibold text-slate-700">Top</button>
+                        <button type="button" onClick={() => handleAlignSelection('middle')} className="px-3 py-2.5 rounded-xl border border-slate-200 bg-white text-sm font-semibold text-slate-700">Middle</button>
+                        <button type="button" onClick={() => handleAlignSelection('bottom')} className="px-3 py-2.5 rounded-xl border border-slate-200 bg-white text-sm font-semibold text-slate-700">Bottom</button>
+                      </div>
+                    </div>
+                  )}
+                  {activeSelectedFieldKeys.length > 1 && selectedFieldKey && (
                     <div className="rounded-[24px] border border-slate-200 bg-slate-50/70 p-4 space-y-3">
                       <div>
                         <p className="text-sm font-black text-slate-900">Align To Active Field</p>
