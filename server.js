@@ -104,6 +104,55 @@ const buildLayoutIndexPayload = (configs) => {
   };
 };
 
+const mergeLayoutIndexes = (primaryPayload, secondaryPayload) => {
+  const mergedLayouts = new Map();
+  const pushLayouts = (payload, preferExisting = false) => {
+    const layouts = Array.isArray(payload?.layouts) ? payload.layouts : [];
+    layouts.forEach((layout) => {
+      if (!layout || typeof layout !== 'object') {
+        return;
+      }
+
+      const layoutId = String(layout.id || '').trim();
+      if (!layoutId) {
+        return;
+      }
+
+      const existing = mergedLayouts.get(layoutId);
+      const nextLayout = {
+        id: layoutId,
+        name: String(layout.name || existing?.name || ''),
+        brand: String(layout.brand || existing?.brand || ''),
+        previewImage: layout.previewImage ?? existing?.previewImage ?? null,
+        shopifyTags: Array.from(new Set([
+          ...(Array.isArray(existing?.shopifyTags) ? existing.shopifyTags : []),
+          ...(Array.isArray(layout.shopifyTags) ? layout.shopifyTags : [])
+        ].map((tag) => String(tag || '').trim()).filter(Boolean)))
+      };
+
+      if (!existing) {
+        mergedLayouts.set(layoutId, nextLayout);
+        return;
+      }
+
+      mergedLayouts.set(layoutId, preferExisting ? {
+        ...nextLayout,
+        ...existing,
+        shopifyTags: nextLayout.shopifyTags
+      } : nextLayout);
+    });
+  };
+
+  pushLayouts(primaryPayload);
+  pushLayouts(secondaryPayload, true);
+
+  return {
+    updatedAt: new Date().toISOString(),
+    layoutCount: mergedLayouts.size,
+    layouts: Array.from(mergedLayouts.values())
+  };
+};
+
 app.use((_, res, next) => {
   res.setHeader('Cache-Control', 'public, max-age=3600, must-revalidate');
   next();
@@ -187,8 +236,10 @@ app.put('/api/layouts', (req, res) => {
 });
 
 app.get('/layout-index.json', (_req, res) => {
+  const staticPayload = readStaticLayoutIndex();
   const storedConfigs = readStoredBrandConfigs();
-  const payload = storedConfigs ? buildLayoutIndexPayload(storedConfigs) : readStaticLayoutIndex();
+  const storedPayload = storedConfigs ? buildLayoutIndexPayload(storedConfigs) : null;
+  const payload = storedPayload ? mergeLayoutIndexes(storedPayload, staticPayload) : staticPayload;
   res.setHeader('Content-Type', 'application/json; charset=UTF-8');
   res.setHeader('Access-Control-Allow-Origin', '*');
   return res.send(JSON.stringify(payload));
@@ -236,30 +287,36 @@ app.get('/api/shopify-products-by-tags', async (req, res) => {
     .map((tag) => tag.trim())
     .filter(Boolean);
   if (!tags.length) {
-    const upstream = await fetch(`${SHOPIFY_BASE_URL}/products.json?limit=250`, {
+    return res.status(400).json({ message: 'Provide one or more Shopify tags.' });
+  }
 
-    const upstream = await fetch(SHOPIFY_GRAPHQL_URL, {
+  try {
+    const upstream = await fetch(`${SHOPIFY_BASE_URL}/products.json?limit=250`, {
+      headers: {
+        'Accept': 'application/json',
         'User-Agent': 'theme-vault-proxy'
       }
-        'Accept': 'application/json',
-      },
+    });
+
+    if (!upstream.ok) {
       const detail = await upstream.text();
       console.error('Shopify tag lookup failed', detail);
       return res.status(upstream.status).json({ message: 'Unable to query Shopify products.', detail });
-    const payload = await upstream.json();
+    }
 
     const payload = await upstream.json();
     const products = Array.isArray(payload?.products) ? payload.products : [];
+    const normalizedTags = tags.map((tag) => tag.toLowerCase());
     const matches = products.filter((product) => {
       const productTags = String(product?.tags || '')
         .split(',')
         .map((tag) => tag.trim().toLowerCase())
         .filter(Boolean);
-      return tags.every((tag) => productTags.includes(tag));
+      return normalizedTags.every((tag) => productTags.includes(tag));
     });
 
     if (!matches.length) {
-      return res.status(502).json({ message: 'Unable to query Shopify products.', detail: payload });
+      return res.status(404).json({ message: 'No Shopify products matched those tags.' });
     }
 
     if (matches.length > 1) {
@@ -275,10 +332,6 @@ app.get('/api/shopify-products-by-tags', async (req, res) => {
       title: product.title || '',
       variants: mapProductVariants(product.variants)
     });
-        available: Boolean(node.availableForSale)
-      };
-    }).filter((entry) => entry && entry.id);
-    return res.json({ handle: productNode.handle, title: productNode.title, variants });
   } catch (error) {
     console.error('Shopify tag lookup exception', error);
     return res.status(502).json({ message: 'Unable to query Shopify by tags.' });
