@@ -1,23 +1,12 @@
 {
-  "updatedAt": "2026-06-06T01:44:38.650Z",
-  "layoutCount": 5,
+  "updatedAt": "2026-06-06T02:26:52.917Z",
+  "layoutCount": 2,
   "layouts": [
-    {
-      "id": "ihg-executive",
-      "name": "Executive Platinum",
-      "brand": "IHG",
-      "shopifyTags": [
-        "card-designer",
-        "ihg-card-designer",
-        "ihg-business-card"
-      ]
-    },
     {
       "id": "hi-modern",
       "name": "Green Field",
       "brand": "Holiday Inn",
       "shopifyTags": [
-        "card-designer",
         "holiday-inn-card",
         "hi-green-field"
       ]
@@ -27,29 +16,8 @@
       "name": "Express Impact",
       "brand": "Holiday Inn Express",
       "shopifyTags": [
-        "card-designer",
         "holiday-inn-express-card",
         "hie-impact"
-      ]
-    },
-    {
-      "id": "cp-prestige",
-      "name": "Corporate Prestige",
-      "brand": "Crowne Plaza",
-      "shopifyTags": [
-        "card-designer",
-        "crowne-plaza-card",
-        "cp-prestige"
-      ]
-    },
-    {
-      "id": "ss-warmth",
-      "name": "Home Suite Home",
-      "brand": "Staybridge Suites",
-      "shopifyTags": [
-        "card-designer",
-        "staybridge-card",
-        "ss-warmth"
       ]
     }
   ]

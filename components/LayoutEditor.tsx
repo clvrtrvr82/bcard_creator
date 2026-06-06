@@ -1214,7 +1214,7 @@ const LayoutEditor: React.FC<LayoutEditorProps> = ({ layout, onChange, settings,
                 handleAddTag();
               }
             }}
-            placeholder="hotel-luxury, ihg-card-designer"
+            placeholder="property-brand-layout, luxury-suite"
             className="flex-1 px-3.5 py-2.5 rounded-xl bg-slate-50 border border-slate-200 text-sm"
           />
           <button type="button" onClick={handleAddTag} className="px-3.5 py-2.5 rounded-xl bg-blue-600 text-white text-[11px] font-black uppercase tracking-[0.3em]">Add Tag</button>

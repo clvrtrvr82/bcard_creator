@@ -37,10 +37,10 @@ actually running: `pm2 status card-app`, `curl http://127.0.0.1:3000/`, and `cur
    - Deploy the repo’s `.htaccess` so it routes `/` to `dist/index.html` and `/assets/*` to `dist/assets/*`.
 
 ## Shopify trigger integration
-- Tag any Shopify product with `card-designer` (or another agreed tag) to surface a “Customize Business Cards” button in the Vault theme.
+- Tag each Shopify product with the layout-specific tag that should unlock it in the designer.
 - Embed the Liquid snippet from the README into `main-product.liquid` so tagged products deep-link to your current host (use `http://<your-mac-ip>:3000` while developing locally, then switch back to the production domain).
 - Keep Locksmith rules aligned so only authenticated partners see tagged products and the CTA.
-- Tag assignment still happens in Shopify Aqdmin—the designer UI cannot write Shopify product tags, so keep adding/removing `card-designer` (or your custom tag) directly on the product before deploying theme changes.
+- Tag assignment still happens in Shopify Admin—the designer UI cannot write Shopify product tags, so keep adding/removing the exact layout-specific tags directly on each product before deploying theme changes.
 
 ## Local Mac hosting fallback
 - Copy `.env.example` to `.env.local` and set `SHOPIFY_STORE_DOMAIN`, `SHOPIFY_STOREFRONT_TOKEN`, and optional `HOST=0.0.0.0`.

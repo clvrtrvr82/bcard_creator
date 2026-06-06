@@ -1,11 +1,8 @@
 (function () {
   const APP_BASE_URL = 'https://bcard-creator.onrender.com';
   const fallbackLayouts = [
-    { shopifyTags: ['card-designer', 'ihg-card-designer', 'ihg-business-card'] },
-    { shopifyTags: ['card-designer', 'holiday-inn-card', 'hi-green-field'] },
-    { shopifyTags: ['card-designer', 'holiday-inn-express-card', 'hie-impact'] },
-    { shopifyTags: ['card-designer', 'crowne-plaza-card', 'cp-prestige'] },
-    { shopifyTags: ['card-designer', 'staybridge-card', 'ss-warmth'] }
+    { shopifyTags: ['holiday-inn-card', 'hi-green-field'] },
+    { shopifyTags: ['holiday-inn-express-card', 'hie-impact'] }
   ];
 
   function normalizeTag(tag) {
