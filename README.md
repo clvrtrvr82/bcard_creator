@@ -105,80 +105,15 @@ Then ensure the updated `.htaccess` (in this repo) is deployed so Apache serves 
 
 ## Shopify tag-triggered CTA
 
-Add this to your Vault theme’s product template (for example, a Custom liquid block on the product page). Shopify Liquid cannot read the layout tags stored in the app, so the snippet below fetches the live layout manifest from the app, compares it to the product’s tags, and only renders the button when there is at least one matching tag.
+Add this to each Shopify product template that should show the designer CTA. If some products use a different template, add the same mount div there too, or place it in a shared Custom liquid block used by those templates. The hosted script handles the tag lookup and button rendering.
 
 ```liquid
 <div
    id="cardify-entry-{{ product.id }}"
    data-cardify-product-handle="{{ product.handle | escape }}"
-   data-cardify-product-tags="{{ product.tags | join: '||' | escape }}"
 ></div>
 
-<script>
-   (function () {
-      const mountId = 'cardify-entry-{{ product.id }}';
-
-      function renderCardifyButton() {
-         const mount = document.getElementById(mountId);
-         if (!mount) return;
-
-         const productHandle = mount.getAttribute('data-cardify-product-handle') || '';
-         const rawTags = mount.getAttribute('data-cardify-product-tags') || '';
-         const productTags = rawTags
-            .split('||')
-            .map((tag) => String(tag || '').trim().toLowerCase())
-            .filter(Boolean);
-
-         if (!productHandle || !productTags.length) return;
-
-         fetch('https://bcard-creator.onrender.com/layout-index.json')
-            .then((response) => {
-               if (!response.ok) throw new Error('Unable to load Cardify layout index.');
-               return response.json();
-            })
-            .then((payload) => {
-               const layouts = Array.isArray(payload && payload.layouts) ? payload.layouts : [];
-               const matchedTags = [];
-               const seen = new Set();
-
-               layouts.forEach((layout) => {
-                  const layoutTags = Array.isArray(layout && layout.shopifyTags) ? layout.shopifyTags : [];
-                  layoutTags.forEach((tag) => {
-                     const normalized = String(tag || '').trim().toLowerCase();
-                     if (!normalized || !productTags.includes(normalized) || seen.has(normalized)) {
-                        return;
-                     }
-
-                     seen.add(normalized);
-                     matchedTags.push(normalized);
-                  });
-               });
-
-               if (!matchedTags.length) return;
-
-               const params = new URLSearchParams();
-               params.set('product', productHandle);
-               matchedTags.forEach((tag) => params.append('tags', tag));
-
-               mount.innerHTML = [
-                  '<a href="https://bcard-creator.onrender.com/?' + params.toString() + '"',
-                  'style="display:inline-block;padding:12px 18px;background:#111827;color:#ffffff;text-decoration:none;border-radius:10px;font-weight:600;">',
-                  'Customize Business Cards',
-                  '</a>'
-               ].join(' ');
-            })
-            .catch((error) => {
-               console.error('Cardify CTA failed:', error);
-            });
-      }
-
-      if (document.readyState === 'loading') {
-         document.addEventListener('DOMContentLoaded', renderCardifyButton, { once: true });
-      } else {
-         renderCardifyButton();
-      }
-   })();
-</script>
+<script src="https://bcard-creator.onrender.com/cardify-shopify-cta.js" defer></script>
 ```
 
-That snippet works for any product whose Shopify tags overlap with a layout’s `shopifyTags` array in the app. Locksmith can continue to gate the product page as usual, and the app still receives `?product=` plus the matched `tags` values.
+That works for any product whose Shopify tags overlap with a layout’s `shopifyTags` array in the app without embedding the tags in Liquid. The hosted script fetches the current product by handle through the app proxy, reads its Shopify tags there, and then decides whether to render the CTA. It also falls back to the built-in tag map if the live manifest fetch is stale or unavailable. Locksmith can continue to gate the product page as usual, and the app still receives `?product=` plus the matched `tags` values.

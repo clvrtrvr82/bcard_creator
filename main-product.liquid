@@ -787,74 +787,8 @@
                           <div
                             id="cardify-entry-{{ product.id }}"
                             data-cardify-product-handle="{{ product.handle | escape }}"
-                            data-cardify-product-tags="{{ product.tags | join: '||' | escape }}"
                           ></div>
-
-                          <script>
-                            (function () {
-                              const mountId = 'cardify-entry-{{ product.id }}';
-
-                              function renderCardifyButton() {
-                                const mount = document.getElementById(mountId);
-                                if (!mount) return;
-
-                                const productHandle = mount.getAttribute('data-cardify-product-handle') || '';
-                                const rawTags = mount.getAttribute('data-cardify-product-tags') || '';
-                                const productTags = rawTags
-                                  .split('||')
-                                  .map((tag) => String(tag || '').trim().toLowerCase())
-                                  .filter(Boolean);
-
-                                if (!productHandle || !productTags.length) return;
-
-                                fetch('https://bcard-creator.onrender.com/layout-index.json')
-                                  .then((response) => {
-                                    if (!response.ok) throw new Error('Unable to load Cardify layout index.');
-                                    return response.json();
-                                  })
-                                  .then((payload) => {
-                                    const layouts = Array.isArray(payload && payload.layouts) ? payload.layouts : [];
-                                    const matchedTags = [];
-                                    const seen = new Set();
-
-                                    layouts.forEach((layout) => {
-                                      const layoutTags = Array.isArray(layout && layout.shopifyTags) ? layout.shopifyTags : [];
-                                      layoutTags.forEach((tag) => {
-                                        const normalized = String(tag || '').trim().toLowerCase();
-                                        if (!normalized || !productTags.includes(normalized) || seen.has(normalized)) {
-                                          return;
-                                        }
-
-                                        seen.add(normalized);
-                                        matchedTags.push(normalized);
-                                      });
-                                    });
-
-                                    if (!matchedTags.length) return;
-
-                                    const params = new URLSearchParams();
-                                    params.set('product', productHandle);
-                                    matchedTags.forEach((tag) => params.append('tags', tag));
-
-                                    mount.innerHTML = [
-                                      '<a href="https://bcard-creator.onrender.com/?' + params.toString() + '"',
-                                      'style="display:inline-block;padding:12px 18px;background:#111827;color:#ffffff;text-decoration:none;border-radius:10px;font-weight:600;">',
-                                      'Customize Business Cards',
-                                      '</a>'
-                                    ].join(' ');
-                                  })
-                                  .catch((error) => {
-                                    console.error('Cardify CTA failed:', error);
-                                  });
-                              }
-
-                              if (document.readyState === 'loading') {
-                                document.addEventListener('DOMContentLoaded', renderCardifyButton, { once: true });
-                              } else {
-                                renderCardifyButton();
-                              }
-                            })();
-                          </script>
+                          <script src="https://bcard-creator.onrender.com/cardify-shopify-cta.js" defer></script>
 
                           <span class="wishlist-productpage hidden"><a href="#wishlist" aria-label="Wishlist" data-product-id="{{ product.id }}" data-variant-id="{{ current_variant.id }}"><i class="icon-heart-outline"></i></a></span>
                         </div>

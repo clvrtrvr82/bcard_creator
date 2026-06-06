@@ -355,6 +355,13 @@ app.post('/cart/add.js', async (req, res) => {
   }
 });
 
+app.get('/cardify-shopify-cta.js', (_req, res) => {
+  const filePath = path.join(publicDir, 'cardify-shopify-cta.js');
+  res.setHeader('Content-Type', 'application/javascript; charset=UTF-8');
+  res.setHeader('Access-Control-Allow-Origin', '*');
+  return res.sendFile(filePath);
+});
+
 app.use(
   express.static(distDir, {
     extensions: ['html'],
