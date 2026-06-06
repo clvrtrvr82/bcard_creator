@@ -34,13 +34,16 @@
 
     const params = new URLSearchParams();
     params.set('product', productHandle);
-    matchedTags.forEach((tag) => params.append('tags', tag));
+    params.set('tags', matchedTags.join(','));
+    if (typeof window !== 'undefined' && window.location && window.location.href) {
+      params.set('returnTo', window.location.href);
+    }
 
     mount.innerHTML = [
       '<a href="' + APP_BASE_URL + '/?' + params.toString() + '"',
       'style="display:inline-block;padding:12px 18px;background:#111827;color:#ffffff;text-decoration:none;border-radius:10px;font-weight:600;"',
       '>',
-      'Customize Business Cards',
+      'Customize My Card',
       '</a>'
     ].join(' ');
   }

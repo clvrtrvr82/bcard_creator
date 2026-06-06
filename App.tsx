@@ -209,21 +209,46 @@ const getShopifyQueryTags = (): string[] => {
   if (typeof window === 'undefined') return [];
   const params = new URLSearchParams(window.location.search);
   const tags = new Set<string>();
-  const singleTag = params.get('tag');
-  if (singleTag) tags.add(singleTag.toLowerCase());
-  const multiTags = params.get('tags');
-  if (multiTags) {
-    multiTags.split(',').forEach((tag) => {
-      if (tag.trim()) tags.add(tag.trim().toLowerCase());
+  [...params.getAll('tag'), ...params.getAll('tags')].forEach((value) => {
+    value.split(',').forEach((tag) => {
+      const normalized = tag.trim().toLowerCase();
+      if (normalized) tags.add(normalized);
     });
-  }
+  });
   return Array.from(tags);
 };
 
 const getProductHandleFromQuery = (): string | null => {
   if (typeof window === 'undefined') return null;
   const params = new URLSearchParams(window.location.search);
-  return params.get('product');
+  return params.get('product')?.trim() || null;
+};
+
+const getReturnUrlFromQuery = (): string | null => {
+  if (typeof window === 'undefined') return null;
+  const params = new URLSearchParams(window.location.search);
+  const candidate = params.get('returnTo')?.trim() || params.get('return_to')?.trim();
+  if (!candidate) return null;
+
+  try {
+    const parsed = new URL(candidate, window.location.origin);
+    if (parsed.protocol !== 'http:' && parsed.protocol !== 'https:') {
+      return null;
+    }
+    return parsed.toString();
+  } catch (error) {
+    console.warn('Ignoring invalid Shopify return URL.', error);
+    return null;
+  }
+};
+
+const buildReturnUrl = (target: string, params: Record<string, string | null | undefined>) => {
+  const url = new URL(target);
+  Object.entries(params).forEach(([key, value]) => {
+    if (!value) return;
+    url.searchParams.set(key, value);
+  });
+  return url.toString();
 };
 
 const buildPreviewCardData = (layout: Layout): CardData => ({
@@ -316,7 +341,7 @@ interface ShopifyCapabilities {
 
 const formatCurrency = (price: number) => new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD' }).format(price / 100);
 
-const CustomizerScreen = ({ layout, onBack, onComplete, settings, productHandle, cartEnabled, tagLookupEnabled, isAdmin }: { layout: Layout, onBack: () => void, onComplete: (data: CardData) => void, settings: AppSettings, productHandle: string | null, cartEnabled: boolean, tagLookupEnabled: boolean, isAdmin: boolean }) => {
+const CustomizerScreen = ({ layout, onBack, onComplete, settings, productHandle, returnUrl, cartEnabled, tagLookupEnabled, isAdmin }: { layout: Layout, onBack: () => void, onComplete: (data: CardData) => void, settings: AppSettings, productHandle: string | null, returnUrl: string | null, cartEnabled: boolean, tagLookupEnabled: boolean, isAdmin: boolean }) => {
   const [step, setStep] = useState<'form' | 'proof' | 'quantity'>('form');
   const [data, setData] = useState<CardData>({ brand: layout.brand, layoutId: layout.id, name: '', jobTitle: '', email: '', phone: '', mobile: '', addressLine1: '', website: '', customValues: {} });
   const totalSteps = cartEnabled ? 3 : 2;
@@ -345,6 +370,7 @@ const CustomizerScreen = ({ layout, onBack, onComplete, settings, productHandle,
   const lockedFieldKeys = useMemo(() => allFieldKeys.filter((key) => getFieldDefinition(key)?.showInForm === false), [allFieldKeys, getFieldDefinition]);
   const hasBackSide = Boolean(layout.back);
   const previewSideLayout = previewSide === 'front' ? layout.front : layout.back || layout.front;
+  const canReturnToProduct = Boolean(returnUrl);
   const getFieldValue = useCallback((key: string, sourceData: CardData = data) => {
     if (Object.prototype.hasOwnProperty.call(sourceData, key)) {
       const raw = (sourceData as any)[key];
@@ -353,6 +379,38 @@ const CustomizerScreen = ({ layout, onBack, onComplete, settings, productHandle,
     }
     return sourceData.customValues?.[key] || '';
   }, [data]);
+
+  const returnToProductPage = useCallback((params?: Record<string, string | null | undefined>) => {
+    if (!returnUrl) return;
+    window.location.href = buildReturnUrl(returnUrl, params || {});
+  }, [returnUrl]);
+
+  const buildLineItemProperties = useCallback((proofReference: string | null) => {
+    const properties: Record<string, string> = {
+      'Layout ID': layout.id,
+      'Layout Name': layout.name,
+      'Proof Reference': proofReference || 'manual_review'
+    };
+
+    if (effectiveProductHandle) {
+      properties['Product Handle'] = effectiveProductHandle;
+    }
+
+    if (returnUrl) {
+      properties['Shopify Product URL'] = returnUrl;
+    }
+
+    allFieldKeys.forEach((key) => {
+      const field = getFieldDefinition(key);
+      const value = (getFieldValue(key) || field?.value || '').trim();
+      if (!value) return;
+      const label = (field?.label || key).trim();
+      if (properties[label]) return;
+      properties[label] = value;
+    });
+
+    return properties;
+  }, [allFieldKeys, effectiveProductHandle, getFieldDefinition, getFieldValue, layout.id, layout.name, returnUrl]);
 
   const primeProductOptions = useCallback((variants: ProductVariantOption[]) => {
     setProductOptions(variants);
@@ -614,12 +672,7 @@ const CustomizerScreen = ({ layout, onBack, onComplete, settings, productHandle,
             {
               id: selectedVariant?.id,
               quantity: 1,
-              properties: {
-                'Layout ID': layout.id,
-                'Layout Name': layout.name,
-                'Proof Reference': proofReference || 'manual_review',
-                'Card Data': JSON.stringify(data)
-              }
+              properties: buildLineItemProperties(proofReference)
             }
           ]
         };
@@ -637,11 +690,26 @@ const CustomizerScreen = ({ layout, onBack, onComplete, settings, productHandle,
         const redirectUrl = result?.checkoutUrl || result?.redirectUrl;
         if (redirectUrl) {
           window.location.href = redirectUrl;
+        } else if (returnUrl) {
+          returnToProductPage({
+            cardify_status: 'cart_created',
+            cardify_layout: layout.id,
+            cardify_variant: String(selectedVariant?.id || '')
+          });
         } else {
           alert('Cart created but no checkout URL was returned. Please review Shopify response.');
         }
       } else {
         onComplete(data);
+        if (returnUrl) {
+          returnToProductPage({
+            cardify_status: 'approved',
+            cardify_layout: layout.id,
+            cardify_proof: proofReference || 'manual_review',
+            cardify_variant: String(selectedVariant?.id || '')
+          });
+          return;
+        }
         const contactEmail = settings.businessEmail || 'your print rep';
         const selectionBlurb = selectedVariant ? ` referencing ${selectedVariant.title}` : '';
         alert(`Proof approved! Share reference ${proofReference || 'manual_review'}${selectionBlurb} with ${contactEmail} to place your order.`);
@@ -718,6 +786,9 @@ const CustomizerScreen = ({ layout, onBack, onComplete, settings, productHandle,
             <p className="text-[11px] text-red-500 font-black uppercase tracking-[0.3em]">Fill all required fields before continuing.</p>
           )}
           <div className="flex flex-wrap gap-2 justify-end">
+            {canReturnToProduct && (
+              <button onClick={() => returnToProductPage()} className="px-4 py-2 rounded-xl border border-slate-200 text-xs font-black uppercase tracking-[0.3em] text-slate-500">Return to product</button>
+            )}
             <button onClick={onBack} className="px-4 py-2 rounded-xl border border-slate-200 text-xs font-black uppercase tracking-[0.3em] text-slate-500">Cancel</button>
             <button onClick={handleFormAdvance} className="px-5 py-2 rounded-xl bg-slate-900 text-white text-xs font-black uppercase tracking-[0.3em]">Preview Proof</button>
           </div>
@@ -912,6 +983,9 @@ const CustomizerScreen = ({ layout, onBack, onComplete, settings, productHandle,
               {productSource === 'tags' && 'Variants auto-matched from a Shopify product that shares this layout\'s tags.'}
             </p>
           )}
+          {canReturnToProduct && (
+            <p className="text-xs text-slate-500">When you finish, checkout opens on Shopify with this card’s details attached to the selected variant.</p>
+          )}
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
             {productOptions.map((variant) => (
               <button
@@ -930,6 +1004,9 @@ const CustomizerScreen = ({ layout, onBack, onComplete, settings, productHandle,
             <button onClick={handleFinalizeRequest} disabled={finalizeDisabled} className="px-6 py-3 rounded-2xl bg-slate-900 text-white text-xs font-black uppercase tracking-[0.3em]">
               {finalizeCtaLabel}
             </button>
+            {canReturnToProduct && (
+              <button onClick={() => returnToProductPage()} className="px-4 py-2 rounded-2xl border border-slate-200 text-xs font-black uppercase tracking-[0.3em] text-slate-500">Return to product</button>
+            )}
             <button onClick={onBack} className="px-4 py-2 rounded-2xl border border-slate-200 text-xs font-black uppercase tracking-[0.3em] text-slate-500">Cancel</button>
           </div>
         </div>
@@ -1018,6 +1095,7 @@ const MainLayout = () => {
   });
   const shopifyQueryTags = useMemo(() => getShopifyQueryTags(), []);
   const productHandle = useMemo(() => getProductHandleFromQuery(), []);
+  const returnUrl = useMemo(() => getReturnUrlFromQuery(), []);
   const selectedLayout = useMemo(() => findLayoutById(brandConfigs, activeLayoutId), [brandConfigs, activeLayoutId]);
   const navigate = useNavigate();
   const handleBrandConfigsChange = useCallback((next: Record<string, BrandConfig>) => {
@@ -1190,9 +1268,10 @@ const MainLayout = () => {
               <CustomizerScreen
                 layout={selectedLayout}
                 onBack={() => setFlowStep(1)}
-                onComplete={() => alert('Design Confirmed! Please contact Theme Vault support to finalize your order.')}
+                onComplete={() => undefined}
                 settings={settings}
                 productHandle={productHandle}
+                returnUrl={returnUrl}
                 cartEnabled={shopifyCapabilities.cartEnabled}
                 tagLookupEnabled={shopifyCapabilities.tagLookupEnabled}
                 isAdmin={isAdmin}
