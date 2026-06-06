@@ -209,8 +209,6 @@ const getShopifyQueryTags = (): string[] => {
   if (typeof window === 'undefined') return [];
   const params = new URLSearchParams(window.location.search);
   const tags = new Set<string>();
-  const productHandle = params.get('product');
-  if (productHandle) tags.add(productHandle.toLowerCase());
   const singleTag = params.get('tag');
   if (singleTag) tags.add(singleTag.toLowerCase());
   const multiTags = params.get('tags');
@@ -241,16 +239,24 @@ const buildPreviewCardData = (layout: Layout): CardData => ({
   customValues: {}
 });
 
-const SelectionScreen = ({ onNext, settings, brandConfigs }: { onNext: (l: Layout) => void, settings: AppSettings, brandConfigs: Record<string, BrandConfig> }) => {
+const SelectionScreen = ({ onNext, settings, brandConfigs, activeTags }: { onNext: (l: Layout) => void, settings: AppSettings, brandConfigs: Record<string, BrandConfig>, activeTags: string[] }) => {
   const [search, setSearch] = useState('');
   const allLayouts = useMemo(() => Object.values(brandConfigs).flatMap(bc => bc.layouts), [brandConfigs]);
-  const layouts = useMemo(() => allLayouts.filter(l => l.name.toLowerCase().includes(search.toLowerCase())), [search, allLayouts]);
+  const tagFilteredLayouts = useMemo(() => {
+    if (!activeTags.length) return allLayouts;
+    return allLayouts.filter((layout) => layout.shopifyTags?.some((tag) => activeTags.includes(tag.toLowerCase())));
+  }, [activeTags, allLayouts]);
+  const layouts = useMemo(() => tagFilteredLayouts.filter(l => l.name.toLowerCase().includes(search.toLowerCase())), [search, tagFilteredLayouts]);
 
   return (
     <div className="max-w-6xl mx-auto p-8 animate-fadeIn pb-24">
       <div className="text-center space-y-6 mb-16">
         <h1 className="text-5xl font-black text-slate-900 uppercase tracking-tight">The Vault Collection</h1>
-        <p className="text-slate-500 font-medium max-w-2xl mx-auto text-base leading-relaxed">Select a template to begin customizing. Use filters to jump directly to the right property or tag.</p>
+        <p className="text-slate-500 font-medium max-w-2xl mx-auto text-base leading-relaxed">
+          {activeTags.length
+            ? `Showing layouts matched to this product: ${activeTags.join(', ')}`
+            : 'Select a template to begin customizing. Use filters to jump directly to the right property or tag.'}
+        </p>
         <div className="max-w-md mx-auto relative">
           <input 
             value={search} 
@@ -261,6 +267,11 @@ const SelectionScreen = ({ onNext, settings, brandConfigs }: { onNext: (l: Layou
           <Search className="absolute left-4 top-1/2 -translate-y-1/2 text-slate-400" size={20}/>
         </div>
       </div>
+      {!layouts.length && (
+        <div className="rounded-[32px] border border-slate-200 bg-white px-8 py-10 text-center text-slate-500 shadow-sm">
+          No layouts match the current product tags.
+        </div>
+      )}
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-8">
         {layouts.map(l => (
           <button 
@@ -1107,17 +1118,12 @@ const MainLayout = () => {
   }, [flowStep, selectedLayout]);
 
   useEffect(() => {
-    if (initialTagApplied) return;
     if (!shopifyQueryTags.length) return;
-    const layoutMatch = Object.values(brandConfigs)
-      .flatMap((config) => config.layouts)
-      .find((layout) => layout.shopifyTags?.some((tag) => shopifyQueryTags.includes(tag.toLowerCase())));
-    if (layoutMatch) {
-      setActiveLayoutId(layoutMatch.id);
-      setFlowStep(2);
+    if (flowStep !== 1) return;
+    if (!initialTagApplied) {
       setInitialTagApplied(true);
     }
-  }, [brandConfigs, shopifyQueryTags, initialTagApplied]);
+  }, [flowStep, initialTagApplied, shopifyQueryTags]);
 
   useEffect(() => {
     const handleShortcut = (e: KeyboardEvent) => {
@@ -1192,7 +1198,7 @@ const MainLayout = () => {
                 isAdmin={isAdmin}
               />
             ) : (
-              <SelectionScreen onNext={(l) => { setActiveLayoutId(l.id); setFlowStep(2); }} settings={settings} brandConfigs={brandConfigs} />
+              <SelectionScreen onNext={(l) => { setActiveLayoutId(l.id); setFlowStep(2); }} settings={settings} brandConfigs={brandConfigs} activeTags={shopifyQueryTags} />
             )
           } />
           <Route path="/admin/*" element={

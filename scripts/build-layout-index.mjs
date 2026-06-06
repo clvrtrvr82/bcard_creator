@@ -4,7 +4,7 @@ import { pathToFileURL } from 'node:url';
 import { build } from 'esbuild';
 
 const rootDir = path.resolve(process.cwd());
-const tmpDir = path.join(rootDir, '.cardify-cache');
+const tmpDir = path.join(rootDir, '.bcard-cache');
 const bundledFile = path.join(tmpDir, 'brand-configs.mjs');
 const publicDir = path.join(rootDir, 'public');
 const outputFile = path.join(publicDir, 'layout-index.json');

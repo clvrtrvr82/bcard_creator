@@ -44,7 +44,7 @@ With the Shopify features enabled, the Express server proxies both `GET /product
    - Runs the full clean + install sequence so `vite` (and every other CLI) exists before you build.
 2. `npm run build` (produces `dist/`)
 3. `pm2 start ecosystem.config.cjs` (note the `.cjs` extension—`pm2 start ecosystem.config.js` will fail)
-4. Tail logs with `pm2 logs card-app` and test `https://cardify.holidayprint.com`
+4. Tail logs with `pm2 logs card-app` and test `https://<your-app-domain>`
 
 > `clean:modules` completely removes `node_modules`.
 > `npm start` now bootstraps `server.js` and will exit early if `dist/index.html` is missing—watch PM2 logs for that guard message.
@@ -53,7 +53,7 @@ With the Shopify features enabled, the Express server proxies both `GET /product
 ```bash
 pm2 status card-app          # should show online + uptime
 curl http://127.0.0.1:3000/  # confirm the Node layer responds
-curl -I https://cardify.holidayprint.com/  # confirm Apache is proxying through
+curl -I https://<your-app-domain>/  # confirm Apache is proxying through
 ```
 
 ## Troubleshoot Apache 500 errors (Cloudways)
@@ -68,7 +68,7 @@ curl -I https://cardify.holidayprint.com/  # confirm Apache is proxying through
    ```
 3. Compare the public proxy response:
    ```bash
-   curl -I https://cardify.holidayprint.com/
+   curl -I https://<your-app-domain>/
    ```
 4. Ensure the `.htaccess` proxy file still matches the repo version (Cloudways disallows `ProxyPassReverse` inside `.htaccess`, so keep only the rewrite block):
    ```bash
@@ -109,11 +109,11 @@ Add this to each Shopify product template that should show the designer CTA. If 
 
 ```liquid
 <div
-   id="cardify-entry-{{ product.id }}"
-   data-cardify-product-handle="{{ product.handle | escape }}"
+   id="designer-entry-{{ product.id }}"
+   data-designer-product-handle="{{ product.handle | escape }}"
 ></div>
 
-<script src="https://bcard-creator.onrender.com/cardify-shopify-cta.js" defer></script>
+<script src="https://bcard-creator.onrender.com/designer-shopify-cta.js" defer></script>
 ```
 
-That works for any product whose Shopify tags overlap with a layout’s `shopifyTags` array in the app without embedding the tags in Liquid. The hosted script fetches the current product by handle through the app proxy, reads its Shopify tags there, and then decides whether to render the CTA. It also falls back to the built-in tag map if the live manifest fetch is stale or unavailable. Locksmith can continue to gate the product page as usual, and the app still receives `?product=` plus the matched `tags` values.
+That works for any product whose Shopify tags overlap with a layout’s `shopifyTags` array in the app without embedding the tags in Liquid. The hosted script fetches the current product by handle from the live Shopify storefront, reads its tags there, and only renders the CTA when at least one layout matches. When the CTA opens the app, the layout selection screen is filtered to only the layouts whose `shopifyTags` match the incoming product tags. It also falls back to the built-in tag map if the live manifest fetch is stale or unavailable. Locksmith can continue to gate the product page as usual, and the app still receives `?product=` plus the matched `tags` values.

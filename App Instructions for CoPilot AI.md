@@ -24,14 +24,14 @@ I will add any more information to this file as needed.
 1. `cd /applications/jfkaeqbfmn/public_html && npm run bootstrap` (this runs the clean + install combo in one shot—skipping it leaves you without `node_modules`, causing `vite: not found`).
 2. Confirm `.env` mirrors Shopify/Locksmith credentials while keeping secrets private.
 3. Run `npm run build` to refresh `/dist`, then launch via `pm2 start ecosystem.config.cjs` (the `.cjs` extension is required) and inspect `pm2 logs card-app` for stack traces to relay back here. Ensure the uploaded bundle includes both `server.js` and `/scripts/ensure-build.mjs`.
-4. After changes, hit `https://cardify.holidayprint.com` to validate Shopify endpoints and confirm Locksmith-protected sections behave as expected.
+4. After changes, hit your deployed app domain to validate Shopify endpoints and confirm Locksmith-protected sections behave as expected.
 5. If Apache still returns 500 while `curl http://127.0.0.1:3000/healthz` is OK:
    - `tail -n 100 /home/1316548.cloudwaysapps.com/jfkaeqbfmn/logs/apache_error.log`
-   - `curl -I https://cardify.holidayprint.com/` and compare with `curl -I http://127.0.0.1:3000/`
+   - `curl -I https://<your-app-domain>/` and compare with `curl -I http://127.0.0.1:3000/`
    - Verify `/home/1316548.cloudwaysapps.com/jfkaeqbfmn/public_html/.htaccess` matches the repo (no `ProxyPassReverse`—Apache blocks it in this context).
    - Escalate to Cloudways if the log mentions missing `mod_proxy`, since that must be enabled at the platform level.
 6. To confirm the service is ## Cloudways + PM2 checklist
-actually running: `pm2 status card-app`, `curl http://127.0.0.1:3000/`, and `curl -I https://cardify.holidayprint.com/`.
+actually running: `pm2 status card-app`, `curl http://127.0.0.1:3000/`, and `curl -I https://<your-app-domain>/`.
 7. If the browser shows `index.tsx` MIME errors, rebuild and verify Apache serves `/dist`:
    - `npm run build`
    - Deploy the repo’s `.htaccess` so it routes `/` to `dist/index.html` and `/assets/*` to `dist/assets/*`.
