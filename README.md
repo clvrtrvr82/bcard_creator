@@ -16,6 +16,7 @@ View your app in AI Studio: https://ai.studio/apps/drive/1tlRidWHl7-sCtwPqxSOcLY
 2. Copy `.env.example` → `.env.local` and fill in:
    - `SHOPIFY_STORE_DOMAIN` (e.g. `holidayprint.myshopify.com`)
    - Optional `SHOPIFY_STOREFRONT_TOKEN` (required only when you want the app to create Shopify carts or query tags via GraphQL)
+   - Optional `SHOPIFY_ADMIN_ACCESS_TOKEN` (required when Locksmith or other storefront gating prevents public product/tag lookup)
    - Optional `HOST=0.0.0.0` so other devices can hit your Mac’s IP.
 3. To re-enable the Shopify cart or tag lookup flows, also add the following Vite flags to `.env.local` and set them to `true`:
    - `VITE_ENABLE_SHOPIFY_CART`
@@ -111,9 +112,10 @@ Add this to each Shopify product template that should show the designer CTA. If 
 <div
    id="designer-entry-{{ product.id }}"
    data-designer-product-handle="{{ product.handle | escape }}"
+   data-designer-product-tags="{{ product.tags | join: ',' | escape }}"
 ></div>
 
 <script src="https://bcard-creator.onrender.com/designer-shopify-cta.js" defer></script>
 ```
 
-That works for any product whose Shopify tags overlap with a layout’s `shopifyTags` array in the app without embedding the tags in Liquid. The hosted script fetches the current product by handle from the live Shopify storefront, reads its tags there, and only renders the CTA when at least one layout matches. When the CTA opens the app, the layout selection screen is filtered to only the layouts whose `shopifyTags` match the incoming product tags, keeps the originating Shopify product URL in `returnTo`, and loads the product variants so the customer can choose the print quantity before checkout. It also falls back to the built-in tag map if the live manifest fetch is stale or unavailable. Locksmith can continue to gate the product page as usual, and the app still receives `?product=`, the matched `tags`, and the product return URL.
+That works for any product whose Shopify tags overlap with a layout’s `shopifyTags` array in the app. The hosted script first reads the tags already rendered into the product page by Liquid, so the CTA can appear even when Locksmith or another storefront gate interferes with extra product JSON requests. If those inline tags are unavailable, the script falls back to this app’s `/products/<handle>.js` route and reads the tags there instead. If `SHOPIFY_ADMIN_ACCESS_TOKEN` is configured, the app resolves that product through Shopify Admin API, which lets Locksmith-protected products still expose tags and variants to the designer flow without relying on the storefront’s public product JSON endpoint. When the CTA opens the app, the layout selection screen is filtered to only the layouts whose `shopifyTags` match the incoming product tags, keeps the originating Shopify product URL in `returnTo`, and loads the product variants so the customer can choose the print quantity before checkout. It also falls back to the built-in tag map if the live manifest fetch is stale or unavailable. Locksmith can continue to gate the product page as usual, and the app still receives `?product=`, the matched `tags`, and the product return URL.

@@ -48,12 +48,12 @@
     ].join(' ');
   }
 
-  function getShopOrigin() {
-    if (typeof window === 'undefined' || !window.location || !window.location.origin) {
-      return '';
-    }
-
-    return window.location.origin;
+  function readMountTags(mount) {
+    const rawTags = mount.getAttribute('data-designer-product-tags') || '';
+    return rawTags
+      .split(',')
+      .map(normalizeTag)
+      .filter(Boolean);
   }
 
   async function loadLayouts() {
@@ -76,12 +76,10 @@
 
   async function loadProductTags(productHandle) {
     try {
-      const shopOrigin = getShopOrigin();
-      if (!shopOrigin) throw new Error('Missing storefront origin.');
-
-      const response = await fetch(shopOrigin + '/products/' + encodeURIComponent(productHandle) + '.js', {
+      const response = await fetch(APP_BASE_URL + '/products/' + encodeURIComponent(productHandle) + '.js?source=shopify-cta-script', {
         cache: 'no-store',
-        credentials: 'same-origin'
+        mode: 'cors',
+        credentials: 'omit'
       });
       if (!response.ok) throw new Error('Unable to load Shopify product tags.');
 
@@ -112,7 +110,8 @@
         return;
       }
 
-      const productTags = await loadProductTags(productHandle);
+      const mountTags = readMountTags(mount);
+      const productTags = mountTags.length ? mountTags : await loadProductTags(productHandle);
       if (!productTags.length) {
         return;
       }

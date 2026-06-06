@@ -20,9 +20,11 @@ const PORT = Number(process.env.PORT ?? process.env.APP_PORT ?? 3000);
 const SHOPIFY_STORE_DOMAIN = process.env.SHOPIFY_STORE_DOMAIN;
 const SHOPIFY_API_VERSION = process.env.SHOPIFY_API_VERSION ?? '2024-01';
 const SHOPIFY_STOREFRONT_TOKEN = process.env.SHOPIFY_STOREFRONT_TOKEN;
+const SHOPIFY_ADMIN_ACCESS_TOKEN = process.env.SHOPIFY_ADMIN_ACCESS_TOKEN;
 const normalizedShopDomain = SHOPIFY_STORE_DOMAIN?.replace(/^https?:\/\//i, '').replace(/\/+$/, '') || null;
 const SHOPIFY_BASE_URL = normalizedShopDomain ? `https://${normalizedShopDomain}` : null;
 const SHOPIFY_GRAPHQL_URL = SHOPIFY_BASE_URL ? `${SHOPIFY_BASE_URL}/api/${SHOPIFY_API_VERSION}/graphql.json` : null;
+const SHOPIFY_ADMIN_GRAPHQL_URL = SHOPIFY_BASE_URL ? `${SHOPIFY_BASE_URL}/admin/api/${SHOPIFY_API_VERSION}/graphql.json` : null;
 const SHOPIFY_CART_ENABLED = Boolean(SHOPIFY_GRAPHQL_URL && SHOPIFY_STOREFRONT_TOKEN);
 const SHOPIFY_TAG_LOOKUP_ENABLED = Boolean(SHOPIFY_BASE_URL);
 const distDir = path.resolve(__dirname, 'dist');
@@ -131,6 +133,106 @@ const mapProductVariants = (variants) => {
     .filter((variant) => variant.id);
 };
 
+const mapAdminProduct = (product) => {
+  const variants = Array.isArray(product?.variants?.edges)
+    ? product.variants.edges.map((edge) => edge?.node).filter(Boolean)
+    : [];
+
+  return {
+    title: String(product?.title || ''),
+    handle: String(product?.handle || ''),
+    tags: Array.isArray(product?.tags) ? product.tags.join(', ') : '',
+    variants: mapProductVariants(variants.map((variant) => ({
+      id: String(variant?.legacyResourceId || '').trim(),
+      title: variant?.title,
+      price: variant?.price,
+      available: variant?.inventoryQuantity == null ? true : variant.inventoryQuantity > 0
+    })))
+  };
+};
+
+const fetchShopifyAdminGraphQL = async (query, variables = {}) => {
+  if (!SHOPIFY_ADMIN_GRAPHQL_URL || !SHOPIFY_ADMIN_ACCESS_TOKEN) {
+    throw new Error('Shopify Admin API not configured.');
+  }
+
+  const upstream = await fetch(SHOPIFY_ADMIN_GRAPHQL_URL, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      'Accept': 'application/json',
+      'X-Shopify-Access-Token': SHOPIFY_ADMIN_ACCESS_TOKEN
+    },
+    body: JSON.stringify({ query, variables })
+  });
+
+  const payload = await upstream.json();
+  if (!upstream.ok || payload?.errors?.length) {
+    const detail = payload?.errors?.length ? payload.errors : payload;
+    throw new Error(`Shopify Admin GraphQL failed: ${JSON.stringify(detail)}`);
+  }
+
+  return payload?.data ?? null;
+};
+
+const fetchAdminProductByHandle = async (handle) => {
+  const query = `query AdminProductByHandle($query: String!) {
+    products(first: 1, query: $query) {
+      edges {
+        node {
+          title
+          handle
+          tags
+          variants(first: 100) {
+            edges {
+              node {
+                legacyResourceId
+                title
+                price
+                inventoryQuantity
+              }
+            }
+          }
+        }
+      }
+    }
+  }`;
+
+  const data = await fetchShopifyAdminGraphQL(query, { query: `handle:${handle}` });
+  const product = data?.products?.edges?.[0]?.node;
+  return product ? mapAdminProduct(product) : null;
+};
+
+const fetchAdminProductsByTags = async (tags) => {
+  const query = `query AdminProductsByTags($query: String!) {
+    products(first: 10, query: $query) {
+      edges {
+        node {
+          title
+          handle
+          tags
+          variants(first: 100) {
+            edges {
+              node {
+                legacyResourceId
+                title
+                price
+                inventoryQuantity
+              }
+            }
+          }
+        }
+      }
+    }
+  }`;
+
+  const search = tags.map((tag) => `tag:${JSON.stringify(tag)}`).join(' AND ');
+  const data = await fetchShopifyAdminGraphQL(query, { query: search });
+  return Array.isArray(data?.products?.edges)
+    ? data.products.edges.map((edge) => mapAdminProduct(edge?.node)).filter((product) => product?.handle)
+    : [];
+};
+
 app.get('/api/shopify-capabilities', (_req, res) => {
   return res.json({
     productProxyEnabled: Boolean(SHOPIFY_BASE_URL),
@@ -193,6 +295,21 @@ app.get('/products/:handle.js', async (req, res) => {
     return res.status(501).json({ message: check.message });
   }
   const handle = req.params.handle;
+  if (SHOPIFY_ADMIN_ACCESS_TOKEN) {
+    try {
+      const product = await fetchAdminProductByHandle(handle);
+      if (!product) {
+        return res.status(404).json({ message: 'Shopify product not found.' });
+      }
+
+      res.setHeader('Content-Type', 'application/json; charset=UTF-8');
+      return res.json(product);
+    } catch (error) {
+      console.error('Shopify Admin product lookup failed', error);
+      return res.status(502).json({ message: 'Unable to reach Shopify Admin product endpoint.' });
+    }
+  }
+
   const targetUrl = `${SHOPIFY_BASE_URL}/products/${encodeURIComponent(handle)}.js`;
   try {
     const upstream = await fetch(targetUrl, {
@@ -233,6 +350,27 @@ app.get('/api/shopify-products-by-tags', async (req, res) => {
   }
 
   try {
+    if (SHOPIFY_ADMIN_ACCESS_TOKEN) {
+      const matches = await fetchAdminProductsByTags(tags);
+      if (!matches.length) {
+        return res.status(404).json({ message: 'No Shopify products matched those tags.' });
+      }
+
+      if (matches.length > 1) {
+        return res.status(409).json({
+          message: 'Multiple Shopify products matched those tags.',
+          handles: matches.map((product) => product.handle).filter(Boolean)
+        });
+      }
+
+      const product = matches[0];
+      return res.json({
+        handle: product.handle || null,
+        title: product.title || '',
+        variants: product.variants || []
+      });
+    }
+
     const upstream = await fetch(`${SHOPIFY_BASE_URL}/products.json?limit=250`, {
       headers: {
         'Accept': 'application/json',

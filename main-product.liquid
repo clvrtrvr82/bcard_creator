@@ -787,6 +787,7 @@
                           <div
                             id="designer-entry-{{ product.id }}"
                             data-designer-product-handle="{{ product.handle | escape }}"
+                            data-designer-product-tags="{{ product.tags | join: ',' | escape }}"
                           ></div>
                           <script src="https://bcard-creator.onrender.com/designer-shopify-cta.js" defer></script>
 
