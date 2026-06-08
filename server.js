@@ -298,15 +298,15 @@ app.get('/products/:handle.js', async (req, res) => {
   if (SHOPIFY_ADMIN_ACCESS_TOKEN) {
     try {
       const product = await fetchAdminProductByHandle(handle);
-      if (!product) {
-        return res.status(404).json({ message: 'Shopify product not found.' });
+      if (product) {
+        res.setHeader('Content-Type', 'application/json; charset=UTF-8');
+        return res.json(product);
       }
 
-      res.setHeader('Content-Type', 'application/json; charset=UTF-8');
-      return res.json(product);
+      console.warn(`Shopify Admin product lookup returned no match for handle "${handle}". Falling back to storefront product JSON.`);
     } catch (error) {
       console.error('Shopify Admin product lookup failed', error);
-      return res.status(502).json({ message: 'Unable to reach Shopify Admin product endpoint.' });
+      console.warn(`Falling back to storefront product JSON for handle "${handle}".`);
     }
   }
 
