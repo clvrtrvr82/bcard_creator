@@ -56,6 +56,27 @@
       .filter(Boolean);
   }
 
+  async function fetchProductTagsFromUrl(url) {
+    const response = await fetch(url, {
+      cache: 'no-store',
+      mode: 'cors',
+      credentials: 'omit'
+    });
+
+    if (!response.ok) {
+      const error = new Error('Unable to load Shopify product tags.');
+      error.status = response.status;
+      error.url = url;
+      throw error;
+    }
+
+    const payload = await response.json();
+    return String(payload && payload.tags ? payload.tags : '')
+      .split(',')
+      .map(normalizeTag)
+      .filter(Boolean);
+  }
+
   async function loadLayouts() {
     try {
       const response = await fetch(APP_BASE_URL + '/layout-index.json?source=shopify-cta-script', {
@@ -75,23 +96,39 @@
   }
 
   async function loadProductTags(productHandle) {
-    try {
-      const response = await fetch(APP_BASE_URL + '/products/' + encodeURIComponent(productHandle) + '.js?source=shopify-cta-script', {
-        cache: 'no-store',
-        mode: 'cors',
-        credentials: 'omit'
-      });
-      if (!response.ok) throw new Error('Unable to load Shopify product tags.');
+    const urls = [
+      APP_BASE_URL + '/products/' + encodeURIComponent(productHandle) + '.js?source=shopify-cta-script'
+    ];
 
-      const payload = await response.json();
-      return String(payload && payload.tags ? payload.tags : '')
-        .split(',')
-        .map(normalizeTag)
-        .filter(Boolean);
-    } catch (error) {
-      console.error('Designer CTA product tag lookup failed:', error);
-      return [];
+    if (typeof window !== 'undefined' && window.location && window.location.origin) {
+      const storefrontUrl = window.location.origin + '/products/' + encodeURIComponent(productHandle) + '.js';
+      if (!urls.includes(storefrontUrl)) {
+        urls.push(storefrontUrl);
+      }
     }
+
+    let lastError = null;
+
+    try {
+      for (const url of urls) {
+        try {
+          const tags = await fetchProductTagsFromUrl(url);
+          if (tags.length) {
+            return tags;
+          }
+        } catch (error) {
+          lastError = error;
+        }
+      }
+    } catch (error) {
+      lastError = error;
+    }
+
+    if (lastError && lastError.status !== 404) {
+      console.error('Designer CTA product tag lookup failed:', lastError);
+    }
+
+    return [];
   }
 
   async function initDesignerShopifyCTA() {
