@@ -4,6 +4,7 @@ import { fileURLToPath } from 'node:url';
 import express from 'express';
 import fetch from 'node-fetch';
 import dotenv from 'dotenv';
+import nodemailer from 'nodemailer';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -21,12 +22,20 @@ const SHOPIFY_STORE_DOMAIN = process.env.SHOPIFY_STORE_DOMAIN;
 const SHOPIFY_API_VERSION = process.env.SHOPIFY_API_VERSION ?? '2024-01';
 const SHOPIFY_STOREFRONT_TOKEN = process.env.SHOPIFY_STOREFRONT_TOKEN;
 const SHOPIFY_ADMIN_ACCESS_TOKEN = process.env.SHOPIFY_ADMIN_ACCESS_TOKEN;
+const SMTP_HOST = process.env.SMTP_HOST;
+const SMTP_PORT = Number(process.env.SMTP_PORT ?? 587);
+const SMTP_SECURE = String(process.env.SMTP_SECURE ?? '').toLowerCase() === 'true' || SMTP_PORT === 465;
+const SMTP_USER = process.env.SMTP_USER;
+const SMTP_PASS = process.env.SMTP_PASS;
+const SMTP_FROM_EMAIL = process.env.SMTP_FROM_EMAIL ?? process.env.SMTP_USER ?? 'no-reply@example.com';
+const PROOF_NOTIFICATION_EMAIL = process.env.PROOF_NOTIFICATION_EMAIL ?? '';
 const normalizedShopDomain = SHOPIFY_STORE_DOMAIN?.replace(/^https?:\/\//i, '').replace(/\/+$/, '') || null;
 const SHOPIFY_BASE_URL = normalizedShopDomain ? `https://${normalizedShopDomain}` : null;
 const SHOPIFY_GRAPHQL_URL = SHOPIFY_BASE_URL ? `${SHOPIFY_BASE_URL}/api/${SHOPIFY_API_VERSION}/graphql.json` : null;
 const SHOPIFY_ADMIN_GRAPHQL_URL = SHOPIFY_BASE_URL ? `${SHOPIFY_BASE_URL}/admin/api/${SHOPIFY_API_VERSION}/graphql.json` : null;
 const SHOPIFY_CART_ENABLED = Boolean(SHOPIFY_GRAPHQL_URL && SHOPIFY_STOREFRONT_TOKEN);
 const SHOPIFY_TAG_LOOKUP_ENABLED = Boolean(SHOPIFY_BASE_URL);
+const PROOF_EMAIL_ENABLED = Boolean(SMTP_HOST && SMTP_USER && SMTP_PASS);
 const distDir = path.resolve(__dirname, 'dist');
 const publicDir = path.resolve(__dirname, 'public');
 const dataDir = path.resolve(__dirname, 'data');
@@ -60,6 +69,78 @@ const readJsonFile = (filePath) => {
     console.error(`Unable to parse JSON from ${filePath}`, error);
     return null;
   }
+};
+
+const proofMailer = PROOF_EMAIL_ENABLED
+  ? nodemailer.createTransport({
+      host: SMTP_HOST,
+      port: SMTP_PORT,
+      secure: SMTP_SECURE,
+      auth: {
+        user: SMTP_USER,
+        pass: SMTP_PASS
+      }
+    })
+  : null;
+
+const formatProofSummary = ({ layoutId, layoutName, productHandle, returnUrl, selectedVariant, cardData }) => {
+  const lines = [
+    `Layout ID: ${layoutId || ''}`,
+    `Layout Name: ${layoutName || ''}`,
+    `Product Handle: ${productHandle || ''}`,
+    `Shopify Product URL: ${returnUrl || ''}`,
+    `Selected Variant: ${selectedVariant?.title || ''}`,
+    `Selected Variant ID: ${selectedVariant?.id || ''}`,
+    `Selected Variant Price: ${selectedVariant?.price != null ? `$${(Number(selectedVariant.price) / 100).toFixed(2)}` : ''}`,
+    '',
+    'Card Data:'
+  ];
+
+  if (cardData && typeof cardData === 'object') {
+    Object.entries(cardData).forEach(([key, value]) => {
+      if (value == null || value === '') return;
+      lines.push(`${key}: ${typeof value === 'string' ? value : JSON.stringify(value)}`);
+    });
+  }
+
+  return lines.join('\n');
+};
+
+const sendProofEmail = async ({
+  notificationEmail,
+  reference,
+  filePath,
+  layoutId,
+  layoutName,
+  productHandle,
+  returnUrl,
+  selectedVariant,
+  cardData
+}) => {
+  if (!proofMailer) {
+    return { emailed: false, reason: 'Proof email disabled.' };
+  }
+
+  const to = String(notificationEmail || PROOF_NOTIFICATION_EMAIL || '').trim();
+  if (!to) {
+    return { emailed: false, reason: 'No proof notification email configured.' };
+  }
+
+  await proofMailer.sendMail({
+    from: SMTP_FROM_EMAIL,
+    to,
+    subject: `New print-ready proof ${reference}`,
+    text: formatProofSummary({ layoutId, layoutName, productHandle, returnUrl, selectedVariant, cardData }),
+    attachments: [
+      {
+        filename: reference,
+        path: filePath,
+        contentType: 'application/pdf'
+      }
+    ]
+  });
+
+  return { emailed: true, to };
 };
 
 const readStoredBrandConfigs = () => {
@@ -615,7 +696,16 @@ app.use(
 
 app.post('/api/proofs', (req, res) => {
   try {
-    const { pdfData, layoutId } = req.body ?? {};
+    const {
+      pdfData,
+      layoutId,
+      layoutName,
+      productHandle,
+      returnUrl,
+      notificationEmail,
+      selectedVariant,
+      cardData
+    } = req.body ?? {};
     if (!pdfData) {
       return res.status(400).json({ message: 'Missing pdfData payload' });
     }
@@ -623,7 +713,24 @@ app.post('/api/proofs', (req, res) => {
     const filePath = path.join(proofsDir, reference);
     const buffer = Buffer.from(pdfData, 'base64');
     fs.writeFileSync(filePath, buffer);
-    return res.json({ reference });
+
+    sendProofEmail({
+      notificationEmail,
+      reference,
+      filePath,
+      layoutId,
+      layoutName,
+      productHandle,
+      returnUrl,
+      selectedVariant,
+      cardData
+    }).then((emailResult) => {
+      return res.json({ reference, ...emailResult });
+    }).catch((error) => {
+      console.error('Unable to send proof email', error);
+      return res.json({ reference, emailed: false, reason: 'Unable to send proof email.' });
+    });
+    return;
   } catch (error) {
     console.error('Unable to persist proof pdf', error);
     return res.status(500).json({ message: 'Unable to store proof PDF' });

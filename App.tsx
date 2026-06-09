@@ -345,6 +345,23 @@ interface ShopifyCapabilities {
   cartEnabled: boolean;
 }
 
+const normalizeVariantPrice = (value: unknown) => {
+  if (typeof value === 'string') {
+    const trimmed = value.trim();
+    if (!trimmed) return 0;
+    if (trimmed.includes('.')) {
+      const dollars = Number.parseFloat(trimmed);
+      return Number.isFinite(dollars) ? Math.round(dollars * 100) : 0;
+    }
+    const cents = Number.parseInt(trimmed, 10);
+    return Number.isFinite(cents) ? cents : 0;
+  }
+
+  const numeric = Number(value ?? 0);
+  if (!Number.isFinite(numeric)) return 0;
+  return Number.isInteger(numeric) ? numeric : Math.round(numeric * 100);
+};
+
 const formatCurrency = (price: number) => new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD' }).format(price / 100);
 
 const CustomizerScreen = ({ layout, onBack, onComplete, settings, productHandle, returnUrl, cartEnabled, tagLookupEnabled, isAdmin }: { layout: Layout, onBack: () => void, onComplete: (data: CardData) => void, settings: AppSettings, productHandle: string | null, returnUrl: string | null, cartEnabled: boolean, tagLookupEnabled: boolean, isAdmin: boolean }) => {
@@ -450,12 +467,10 @@ const CustomizerScreen = ({ layout, onBack, onComplete, settings, productHandle,
         const json = await response.json();
         if (cancelled) return;
         const variants: ProductVariantOption[] = (json.variants || []).map((variant: any) => {
-          const rawPrice = typeof variant.price === 'string' ? parseFloat(variant.price) : Number(variant.price ?? 0);
-          const cents = Number.isFinite(rawPrice) ? Math.round(rawPrice * 100) : 0;
           return {
             id: Number(variant.id),
             title: variant.title,
-            price: cents,
+            price: normalizeVariantPrice(variant.price),
             available: Boolean(variant.available)
           };
         });
@@ -653,7 +668,23 @@ const CustomizerScreen = ({ layout, onBack, onComplete, settings, productHandle,
       const response = await fetch('/api/proofs', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ pdfData: base64, layoutId: layout.id, cardData: data })
+        body: JSON.stringify({
+          pdfData: base64,
+          layoutId: layout.id,
+          layoutName: layout.name,
+          cardData: data,
+          productHandle: effectiveProductHandle,
+          returnUrl,
+          notificationEmail: settings.businessEmail,
+          selectedVariant: selectedVariant
+            ? {
+                id: selectedVariant.id,
+                title: selectedVariant.title,
+                price: selectedVariant.price,
+                available: selectedVariant.available
+              }
+            : null
+        })
       });
       if (!response.ok) throw new Error('Upload failed');
       const payload = await response.json();
