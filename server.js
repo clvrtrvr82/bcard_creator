@@ -74,17 +74,44 @@ const readStoredBrandConfigs = () => {
   return configs;
 };
 
-const readStaticLayoutIndex = () => {
-  const payload = readJsonFile(builtLayoutIndexFile) ?? readJsonFile(sourceLayoutIndexFile);
-  if (!payload || typeof payload !== 'object') {
-    return {
-      updatedAt: new Date().toISOString(),
-      layoutCount: 0,
-      layouts: []
-    };
+const mapLayoutsForPublicIndex = (brandConfigs) => {
+  if (!brandConfigs || typeof brandConfigs !== 'object' || Array.isArray(brandConfigs)) {
+    return [];
   }
 
-  return payload;
+  return Object.entries(brandConfigs).flatMap(([brandKey, config]) => {
+    const layouts = Array.isArray(config?.layouts) ? config.layouts : [];
+    return layouts.map((layout) => ({
+      id: layout?.id,
+      name: layout?.name,
+      brand: layout?.brand ?? brandKey,
+      shopifyTags: Array.isArray(layout?.shopifyTags) ? layout.shopifyTags : [],
+      shopifyProductHandle: typeof layout?.shopifyProductHandle === 'string' ? layout.shopifyProductHandle : ''
+    })).filter((layout) => layout.id && layout.name);
+  });
+};
+
+const readStaticLayoutIndex = () => {
+  const payload = readJsonFile(builtLayoutIndexFile) ?? readJsonFile(sourceLayoutIndexFile);
+  const staticLayouts = Array.isArray(payload?.layouts) ? payload.layouts : [];
+  const storedLayouts = mapLayoutsForPublicIndex(readStoredBrandConfigs());
+  const mergedLayouts = new Map();
+
+  staticLayouts.forEach((layout) => {
+    if (layout?.id) {
+      mergedLayouts.set(layout.id, layout);
+    }
+  });
+
+  storedLayouts.forEach((layout) => {
+    mergedLayouts.set(layout.id, layout);
+  });
+
+  return {
+    updatedAt: new Date().toISOString(),
+    layoutCount: mergedLayouts.size,
+    layouts: Array.from(mergedLayouts.values())
+  };
 };
 
 app.use((_, res, next) => {
