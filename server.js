@@ -391,8 +391,13 @@ app.get('/api/shopify-products', async (req, res) => {
 
   try {
     if (SHOPIFY_ADMIN_ACCESS_TOKEN) {
-      const products = await fetchAdminProducts({ query, limit });
-      return res.json({ products });
+      try {
+        const products = await fetchAdminProducts({ query, limit });
+        return res.json({ products });
+      } catch (error) {
+        console.error('Shopify Admin product list lookup failed', error);
+        console.warn('Falling back to storefront product list lookup.');
+      }
     }
 
     const upstream = await fetch(`${SHOPIFY_BASE_URL}/products.json?limit=250`, {
@@ -538,24 +543,29 @@ app.get('/api/shopify-products-by-tags', async (req, res) => {
 
   try {
     if (SHOPIFY_ADMIN_ACCESS_TOKEN) {
-      const matches = await fetchAdminProductsByTags(tags);
-      if (!matches.length) {
-        return res.status(404).json({ message: 'No Shopify products matched those tags.' });
-      }
+      try {
+        const matches = await fetchAdminProductsByTags(tags);
+        if (!matches.length) {
+          return res.status(404).json({ message: 'No Shopify products matched those tags.' });
+        }
 
-      if (matches.length > 1) {
-        return res.status(409).json({
-          message: 'Multiple Shopify products matched those tags.',
-          handles: matches.map((product) => product.handle).filter(Boolean)
+        if (matches.length > 1) {
+          return res.status(409).json({
+            message: 'Multiple Shopify products matched those tags.',
+            handles: matches.map((product) => product.handle).filter(Boolean)
+          });
+        }
+
+        const product = matches[0];
+        return res.json({
+          handle: product.handle || null,
+          title: product.title || '',
+          variants: product.variants || []
         });
+      } catch (error) {
+        console.error('Shopify Admin tag lookup failed', error);
+        console.warn('Falling back to storefront tag lookup.');
       }
-
-      const product = matches[0];
-      return res.json({
-        handle: product.handle || null,
-        title: product.title || '',
-        variants: product.variants || []
-      });
     }
 
     const upstream = await fetch(`${SHOPIFY_BASE_URL}/products.json?limit=250`, {
