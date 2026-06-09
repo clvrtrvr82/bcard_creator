@@ -96,15 +96,18 @@
   }
 
   async function loadProductTags(productHandle) {
-    const urls = [
-      APP_BASE_URL + '/products/' + encodeURIComponent(productHandle) + '.js?source=shopify-cta-script'
-    ];
+    const urls = [];
 
     if (typeof window !== 'undefined' && window.location && window.location.origin) {
       const storefrontUrl = window.location.origin + '/products/' + encodeURIComponent(productHandle) + '.js';
       if (!urls.includes(storefrontUrl)) {
         urls.push(storefrontUrl);
       }
+    }
+
+    const appProxyUrl = APP_BASE_URL + '/products/' + encodeURIComponent(productHandle) + '.js?source=shopify-cta-script';
+    if (!urls.includes(appProxyUrl)) {
+      urls.push(appProxyUrl);
     }
 
     let lastError = null;
