@@ -362,6 +362,22 @@ const normalizeVariantPrice = (value: unknown) => {
   return Number.isInteger(numeric) ? numeric : Math.round(numeric * 100);
 };
 
+const PRODUCT_REQUEST_TIMEOUT_MS = 12000;
+
+const fetchWithTimeout = async (input: RequestInfo | URL, init: RequestInit = {}, timeoutMs = PRODUCT_REQUEST_TIMEOUT_MS) => {
+  const controller = new AbortController();
+  const timeoutId = window.setTimeout(() => controller.abort(), timeoutMs);
+
+  try {
+    return await fetch(input, {
+      ...init,
+      signal: controller.signal
+    });
+  } finally {
+    window.clearTimeout(timeoutId);
+  }
+};
+
 const formatCurrency = (price: number) => new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD' }).format(price / 100);
 
 const CustomizerScreen = ({ layout, onBack, onComplete, settings, productHandle, returnUrl, cartEnabled, tagLookupEnabled, isAdmin }: { layout: Layout, onBack: () => void, onComplete: (data: CardData) => void, settings: AppSettings, productHandle: string | null, returnUrl: string | null, cartEnabled: boolean, tagLookupEnabled: boolean, isAdmin: boolean }) => {
@@ -462,7 +478,7 @@ const CustomizerScreen = ({ layout, onBack, onComplete, settings, productHandle,
     const fetchProduct = async () => {
       setProductStatus('loading');
       try {
-        const response = await fetch(`/products/${effectiveProductHandle}.js`, { credentials: 'include' });
+        const response = await fetchWithTimeout(`/products/${effectiveProductHandle}.js`, { credentials: 'include' });
         if (!response.ok) throw new Error('Unable to load product options');
         const json = await response.json();
         if (cancelled) return;
@@ -479,6 +495,7 @@ const CustomizerScreen = ({ layout, onBack, onComplete, settings, productHandle,
       } catch (error) {
         console.warn('Product option fetch failed', error);
         if (!cancelled) {
+          primeProductOptions([]);
           setProductStatus('error');
         }
       }
@@ -499,7 +516,7 @@ const CustomizerScreen = ({ layout, onBack, onComplete, settings, productHandle,
       setProductStatus('loading');
       try {
         const tagQuery = encodeURIComponent((layout.shopifyTags || []).join(','));
-        const response = await fetch(`/api/shopify-products-by-tags?tags=${tagQuery}`, { credentials: 'include' });
+        const response = await fetchWithTimeout(`/api/shopify-products-by-tags?tags=${tagQuery}`, { credentials: 'include' });
         if (!response.ok) throw new Error('No Shopify product matched those tags');
         const payload = await response.json();
         if (cancelled) return;
@@ -510,6 +527,7 @@ const CustomizerScreen = ({ layout, onBack, onComplete, settings, productHandle,
       } catch (error) {
         console.warn('Tag-based product lookup failed', error);
         if (!cancelled) {
+          primeProductOptions([]);
           setProductStatus('error');
         }
       }
