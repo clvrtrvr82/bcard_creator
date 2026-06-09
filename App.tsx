@@ -224,6 +224,12 @@ const getProductHandleFromQuery = (): string | null => {
   return params.get('product')?.trim() || null;
 };
 
+const getLayoutIdFromQuery = (): string | null => {
+  if (typeof window === 'undefined') return null;
+  const params = new URLSearchParams(window.location.search);
+  return params.get('layoutId')?.trim() || params.get('layout')?.trim() || null;
+};
+
 const getReturnUrlFromQuery = (): string | null => {
   if (typeof window === 'undefined') return null;
   const params = new URLSearchParams(window.location.search);
@@ -1085,8 +1091,9 @@ const MainLayout = () => {
   const [brandConfigs, setBrandConfigs] = useState<Record<string, BrandConfig>>({});
   const [layoutsHydrated, setLayoutsHydrated] = useState(false);
   const [isAdmin, setIsAdmin] = useState(() => Boolean(safeSessionStorage?.getItem(ADMIN_AUTH_KEY)));
-  const [flowStep, setFlowStep] = useState(1);
-  const [activeLayoutId, setActiveLayoutId] = useState<string | null>(null);
+  const initialLayoutId = useMemo(() => getLayoutIdFromQuery(), []);
+  const [flowStep, setFlowStep] = useState(() => initialLayoutId ? 2 : 1);
+  const [activeLayoutId, setActiveLayoutId] = useState<string | null>(initialLayoutId);
   const [initialTagApplied, setInitialTagApplied] = useState(false);
   const [shopifyCapabilities, setShopifyCapabilities] = useState<ShopifyCapabilities>({
     productProxyEnabled: true,

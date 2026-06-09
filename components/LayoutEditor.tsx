@@ -32,7 +32,14 @@ interface LayoutEditorProps {
   onOpenAssets?: () => void;
 }
 
+interface ShopifyProductSummary {
+  title: string;
+  handle: string;
+  tags: string[];
+}
+
 const cloneLayout = (layout: Layout): Layout => JSON.parse(JSON.stringify(layout));
+const normalizeShopifyToken = (value: string) => value.trim().toLowerCase();
 
 const createFieldTemplate = (label: string): FieldStyle => ({
   label,
@@ -118,6 +125,9 @@ const LayoutEditor: React.FC<LayoutEditorProps> = ({ layout, onChange, settings,
   const [selectedFieldKeys, setSelectedFieldKeys] = useState<string[]>([]);
   const [newFieldName, setNewFieldName] = useState('');
   const [tagInput, setTagInput] = useState('');
+  const [productSearch, setProductSearch] = useState('');
+  const [shopifyProducts, setShopifyProducts] = useState<ShopifyProductSummary[]>([]);
+  const [productPickerStatus, setProductPickerStatus] = useState<'idle' | 'loading' | 'ready' | 'error' | 'unavailable'>('idle');
   const [canvasScale, setCanvasScale] = useState(DEFAULT_CANVAS_SCALE);
   const [positionStep, setPositionStep] = useState(() => pointsToPixels(1));
   const [snapToGrid, setSnapToGrid] = useState(true);
@@ -145,6 +155,55 @@ const LayoutEditor: React.FC<LayoutEditorProps> = ({ layout, onChange, settings,
     setSelectedFieldKeys([]);
     setActiveSide('front');
   }, [layout.id]);
+
+  useEffect(() => {
+    let cancelled = false;
+    const controller = new AbortController();
+    const timeoutId = window.setTimeout(async () => {
+      setProductPickerStatus('loading');
+      try {
+        const params = new URLSearchParams();
+        params.set('limit', productSearch.trim() ? '24' : '12');
+        if (productSearch.trim()) {
+          params.set('query', productSearch.trim());
+        }
+
+        const response = await fetch(`/api/shopify-products?${params.toString()}`, {
+          credentials: 'include',
+          signal: controller.signal
+        });
+
+        if (cancelled) return;
+
+        if (response.status === 501 || response.status === 404) {
+          setShopifyProducts([]);
+          setProductPickerStatus('unavailable');
+          return;
+        }
+
+        if (!response.ok) {
+          throw new Error(`Unable to load Shopify products: ${response.status}`);
+        }
+
+        const payload = await response.json();
+        if (cancelled) return;
+
+        setShopifyProducts(Array.isArray(payload?.products) ? payload.products : []);
+        setProductPickerStatus('ready');
+      } catch (error) {
+        if (cancelled || controller.signal.aborted) return;
+        console.warn('Unable to load Shopify product list.', error);
+        setShopifyProducts([]);
+        setProductPickerStatus('error');
+      }
+    }, 250);
+
+    return () => {
+      cancelled = true;
+      controller.abort();
+      window.clearTimeout(timeoutId);
+    };
+  }, [productSearch]);
 
   useEffect(() => {
     if (typeof window === 'undefined') return undefined;
@@ -394,7 +453,7 @@ const LayoutEditor: React.FC<LayoutEditorProps> = ({ layout, onChange, settings,
     });
   };
 
-  const handleNudgeField = (key: string, axis: 'left' | 'top', delta: number) => {
+  const handleNudgeField = (key: string, axis: 'left' | 'top', vdelta: number) => {
     const targetKeys = activeSelectedFieldKeys.length ? activeSelectedFieldKeys : key ? [key] : [];
     if (!targetKeys.length) return;
     commitSelectedFields(targetKeys, (targetField, fieldKey) => {
@@ -657,6 +716,25 @@ const LayoutEditor: React.FC<LayoutEditorProps> = ({ layout, onChange, settings,
     commitLayout((draft) => {
       draft.shopifyTags = (draft.shopifyTags || []).filter((entry) => entry !== tag);
     });
+  };
+
+  const handleApplyShopifyProduct = (product: ShopifyProductSummary) => {
+    const normalizedTags = product.tags.map(normalizeShopifyToken).filter(Boolean);
+
+    commitLayout((draft) => {
+      draft.shopifyProductHandle = product.handle;
+      draft.shopifyTags = Array.from(new Set(normalizedTags));
+    });
+
+    pushMessage(`Linked layout to Shopify product ${product.title}.`);
+  };
+
+  const handleClearShopifyProduct = () => {
+    commitLayout((draft) => {
+      draft.shopifyProductHandle = '';
+    });
+
+    pushMessage('Shopify product link cleared.');
   };
 
   const getSelectionFrames = (keys: string[]) => keys
@@ -1195,6 +1273,66 @@ const LayoutEditor: React.FC<LayoutEditorProps> = ({ layout, onChange, settings,
       <div className="bg-white border border-slate-100 rounded-[24px] p-6 space-y-5">
         <div className="flex items-center gap-3 text-[10px] font-black uppercase tracking-[0.3em] text-slate-400">
           <Tag size={14} /> Shopify Trigger Tags
+        </div>
+        <div className="space-y-3 rounded-2xl border border-slate-200 bg-slate-50 p-4">
+          <div className="flex items-center justify-between gap-3">
+            <div>
+              <p className="text-[11px] font-black uppercase tracking-[0.3em] text-slate-400">Assigned Product</p>
+              <p className="mt-1 text-sm font-semibold text-slate-900">{layout.shopifyProductHandle || 'No Shopify product linked yet'}</p>
+            </div>
+            {layout.shopifyProductHandle && (
+              <button type="button" onClick={handleClearShopifyProduct} className="shrink-0 rounded-xl border border-slate-200 bg-white px-3 py-2 text-[11px] font-black uppercase tracking-[0.24em] text-slate-600">
+                Clear Product
+              </button>
+            )}
+          </div>
+          <div className="flex items-center gap-2.5">
+            <input
+              value={productSearch}
+              onChange={(e) => setProductSearch(e.target.value)}
+              placeholder="Search Shopify products by title, handle, or tag"
+              className="flex-1 px-3.5 py-2.5 rounded-xl bg-white border border-slate-200 text-sm"
+            />
+          </div>
+          {productPickerStatus === 'loading' && (
+            <p className="text-xs text-slate-500">Loading Shopify products…</p>
+          )}
+          {productPickerStatus === 'unavailable' && (
+            <p className="text-xs text-amber-700">Shopify product search is unavailable until the server is connected to your Shopify store.</p>
+          )}
+          {productPickerStatus === 'error' && (
+            <p className="text-xs text-red-600">Unable to load Shopify products right now.</p>
+          )}
+          {productPickerStatus === 'ready' && !shopifyProducts.length && (
+            <p className="text-xs text-slate-500">No Shopify products matched that search.</p>
+          )}
+          {!!shopifyProducts.length && (
+            <div className="max-h-56 space-y-2 overflow-y-auto pr-1">
+              {shopifyProducts.map((product) => {
+                const isSelected = product.handle === layout.shopifyProductHandle;
+                return (
+                  <button
+                    key={product.handle}
+                    type="button"
+                    onClick={() => handleApplyShopifyProduct(product)}
+                    className={`w-full rounded-2xl border px-4 py-3 text-left transition-colors ${isSelected ? 'border-blue-500 bg-blue-50' : 'border-slate-200 bg-white hover:border-slate-300'}`}
+                  >
+                    <div className="flex items-start justify-between gap-3">
+                      <div className="min-w-0">
+                        <p className="truncate text-sm font-black text-slate-900">{product.title}</p>
+                        <p className="mt-1 truncate text-[11px] font-semibold uppercase tracking-[0.24em] text-slate-500">{product.handle}</p>
+                      </div>
+                      {isSelected && <span className="text-[10px] font-black uppercase tracking-[0.28em] text-blue-600">Selected</span>}
+                    </div>
+                    {!!product.tags.length && (
+                      <p className="mt-2 line-clamp-2 text-xs text-slate-500">Tags: {product.tags.join(', ')}</p>
+                    )}
+                  </button>
+                );
+              })}
+            </div>
+          )}
+          <p className="text-[11px] leading-relaxed text-slate-500">Selecting a product stores its handle on the layout and syncs this layout's Shopify trigger tags from that product so the storefront button can target the right card.</p>
         </div>
         <div className="flex flex-wrap gap-2.5">
           {(layout.shopifyTags || []).map((tag) => (

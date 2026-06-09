@@ -33,7 +33,8 @@ async function buildLayoutIndex() {
       id: layout.id,
       name: layout.name,
       brand: layout.brand,
-      shopifyTags: layout.shopifyTags ?? []
+      shopifyTags: layout.shopifyTags ?? [],
+      shopifyProductHandle: layout.shopifyProductHandle ?? ''
     }));
   });
   await fs.mkdir(publicDir, { recursive: true });

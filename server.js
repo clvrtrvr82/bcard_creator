@@ -178,6 +178,17 @@ const mapAdminProduct = (product) => {
   };
 };
 
+const mapProductSummary = (product) => ({
+  title: String(product?.title || ''),
+  handle: String(product?.handle || ''),
+  tags: Array.isArray(product?.tags)
+    ? product.tags.map((tag) => String(tag || '').trim()).filter(Boolean)
+    : String(product?.tags || '')
+      .split(',')
+      .map((tag) => tag.trim())
+      .filter(Boolean)
+});
+
 const fetchShopifyAdminGraphQL = async (query, variables = {}) => {
   if (!SHOPIFY_ADMIN_GRAPHQL_URL || !SHOPIFY_ADMIN_ACCESS_TOKEN) {
     throw new Error('Shopify Admin API not configured.');
@@ -260,12 +271,80 @@ const fetchAdminProductsByTags = async (tags) => {
     : [];
 };
 
+const fetchAdminProducts = async ({ query = '', limit = 50 } = {}) => {
+  const normalizedLimit = Math.min(Math.max(Number(limit) || 20, 1), 100);
+  const graphql = `query AdminProductsList($first: Int!, $query: String!) {
+    products(first: $first, query: $query, sortKey: TITLE) {
+      edges {
+        node {
+          title
+          handle
+          tags
+        }
+      }
+    }
+  }`;
+
+  const data = await fetchShopifyAdminGraphQL(graphql, { first: normalizedLimit, query: String(query || '').trim() });
+  return Array.isArray(data?.products?.edges)
+    ? data.products.edges.map((edge) => mapProductSummary(edge?.node)).filter((product) => product.handle)
+    : [];
+};
+
 app.get('/api/shopify-capabilities', (_req, res) => {
   return res.json({
     productProxyEnabled: Boolean(SHOPIFY_BASE_URL),
     tagLookupEnabled: SHOPIFY_TAG_LOOKUP_ENABLED,
     cartEnabled: SHOPIFY_CART_ENABLED
   });
+});
+
+app.get('/api/shopify-products', async (req, res) => {
+  const check = withShopifyConfig(false);
+  if (!check.ok || !SHOPIFY_BASE_URL) {
+    return res.status(501).json({ message: check.message });
+  }
+
+  const query = String(req.query.query || '').trim();
+  const limit = Math.min(Math.max(Number(req.query.limit) || 20, 1), 100);
+
+  try {
+    if (SHOPIFY_ADMIN_ACCESS_TOKEN) {
+      const products = await fetchAdminProducts({ query, limit });
+      return res.json({ products });
+    }
+
+    const upstream = await fetch(`${SHOPIFY_BASE_URL}/products.json?limit=250`, {
+      headers: {
+        'Accept': 'application/json',
+        'User-Agent': 'theme-vault-proxy'
+      }
+    });
+
+    if (!upstream.ok) {
+      const detail = await upstream.text();
+      console.error('Shopify product list lookup failed', detail);
+      return res.status(upstream.status).json({ message: 'Unable to query Shopify products.', detail });
+    }
+
+    const payload = await upstream.json();
+    const products = Array.isArray(payload?.products) ? payload.products : [];
+    const normalizedQuery = query.toLowerCase();
+    const filtered = products
+      .map((product) => mapProductSummary(product))
+      .filter((product) => {
+        if (!normalizedQuery) return true;
+        return product.title.toLowerCase().includes(normalizedQuery)
+          || product.handle.toLowerCase().includes(normalizedQuery)
+          || product.tags.some((tag) => tag.toLowerCase().includes(normalizedQuery));
+      })
+      .slice(0, limit);
+
+    return res.json({ products: filtered });
+  } catch (error) {
+    console.error('Shopify product list exception', error);
+    return res.status(502).json({ message: 'Unable to query Shopify products.' });
+  }
 });
 
 app.get('/api/layouts', (_req, res) => {

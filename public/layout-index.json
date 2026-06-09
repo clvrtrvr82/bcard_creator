@@ -1,5 +1,5 @@
 {
-  "updatedAt": "2026-06-09T10:42:39.280Z",
+  "updatedAt": "2026-06-09T12:23:55.067Z",
   "layoutCount": 2,
   "layouts": [
     {
@@ -9,7 +9,8 @@
       "shopifyTags": [
         "holiday-inn-card",
         "hi-green-field"
-      ]
+      ],
+      "shopifyProductHandle": ""
     },
     {
       "id": "hie-impact",
@@ -18,7 +19,8 @@
       "shopifyTags": [
         "holiday-inn-express-card",
         "hie-impact"
-      ]
+      ],
+      "shopifyProductHandle": ""
     }
   ]
 }

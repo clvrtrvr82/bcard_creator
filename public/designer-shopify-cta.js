@@ -9,6 +9,24 @@
     return String(tag || '').trim().toLowerCase();
   }
 
+  function normalizeHandle(handle) {
+    return String(handle || '').trim().toLowerCase();
+  }
+
+  function getMatchedLayouts(layouts, productHandle, productTags) {
+    const normalizedHandle = normalizeHandle(productHandle);
+
+    return layouts.filter((layout) => {
+      const layoutHandle = normalizeHandle(layout && layout.shopifyProductHandle);
+      if (layoutHandle && layoutHandle === normalizedHandle) {
+        return true;
+      }
+
+      const layoutTags = Array.isArray(layout && layout.shopifyTags) ? layout.shopifyTags : [];
+      return layoutTags.some((tag) => productTags.includes(normalizeTag(tag)));
+    });
+  }
+
   function getMatchedTags(layouts, productTags) {
     const matchedTags = [];
     const seen = new Set();
@@ -29,12 +47,19 @@
     return matchedTags;
   }
 
-  function renderButton(mount, productHandle, matchedTags) {
-    if (!matchedTags.length) return;
+  function renderButton(mount, productHandle, matchedLayouts, productTags) {
+    if (!matchedLayouts.length) return;
+
+    const matchedTags = getMatchedTags(matchedLayouts, productTags);
 
     const params = new URLSearchParams();
     params.set('product', productHandle);
-    params.set('tags', matchedTags.join(','));
+    if (matchedTags.length) {
+      params.set('tags', matchedTags.join(','));
+    }
+    if (matchedLayouts.length === 1 && matchedLayouts[0] && matchedLayouts[0].id) {
+      params.set('layoutId', matchedLayouts[0].id);
+    }
     if (typeof window !== 'undefined' && window.location && window.location.href) {
       params.set('returnTo', window.location.href);
     }
@@ -152,16 +177,12 @@
 
       const mountTags = readMountTags(mount);
       const productTags = mountTags.length ? mountTags : await loadProductTags(productHandle);
-      if (!productTags.length) {
+      const matchedLayouts = getMatchedLayouts(layouts, productHandle, productTags);
+      if (!matchedLayouts.length) {
         return;
       }
 
-      const matchedTags = getMatchedTags(layouts, productTags);
-      if (!matchedTags.length) {
-        return;
-      }
-
-      renderButton(mount, productHandle, matchedTags);
+      renderButton(mount, productHandle, matchedLayouts, productTags);
       mount.setAttribute('data-designer-rendered', 'true');
     }));
   }
