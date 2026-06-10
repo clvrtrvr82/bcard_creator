@@ -38,6 +38,8 @@ interface ShopifyProductSummary {
   tags: string[];
 }
 
+const SHOPIFY_PRODUCT_PAGE_SIZE = 24;
+
 const cloneLayout = (layout: Layout): Layout => JSON.parse(JSON.stringify(layout));
 const normalizeShopifyToken = (value: string) => value.trim().toLowerCase();
 
@@ -127,6 +129,9 @@ const LayoutEditor: React.FC<LayoutEditorProps> = ({ layout, onChange, settings,
   const [tagInput, setTagInput] = useState('');
   const [productSearch, setProductSearch] = useState('');
   const [shopifyProducts, setShopifyProducts] = useState<ShopifyProductSummary[]>([]);
+  const [productRequestCursor, setProductRequestCursor] = useState<string | null>(null);
+  const [nextProductListCursor, setNextProductListCursor] = useState<string | null>(null);
+  const [hasMoreShopifyProducts, setHasMoreShopifyProducts] = useState(false);
   const [productPickerStatus, setProductPickerStatus] = useState<'idle' | 'loading' | 'ready' | 'error' | 'unavailable'>('idle');
   const [canvasScale, setCanvasScale] = useState(DEFAULT_CANVAS_SCALE);
   const [positionStep, setPositionStep] = useState(() => pointsToPixels(1));
@@ -157,15 +162,25 @@ const LayoutEditor: React.FC<LayoutEditorProps> = ({ layout, onChange, settings,
   }, [layout.id]);
 
   useEffect(() => {
+    setProductRequestCursor(null);
+    setNextProductListCursor(null);
+    setHasMoreShopifyProducts(false);
+    setShopifyProducts([]);
+  }, [productSearch]);
+
+  useEffect(() => {
     let cancelled = false;
     const controller = new AbortController();
     const timeoutId = window.setTimeout(async () => {
       setProductPickerStatus('loading');
       try {
         const params = new URLSearchParams();
-        params.set('limit', productSearch.trim() ? '24' : '12');
+        params.set('limit', String(SHOPIFY_PRODUCT_PAGE_SIZE));
         if (productSearch.trim()) {
           params.set('query', productSearch.trim());
+        }
+        if (productRequestCursor) {
+          params.set('cursor', productRequestCursor);
         }
 
         const response = await fetch(`/api/shopify-products?${params.toString()}`, {
@@ -188,12 +203,29 @@ const LayoutEditor: React.FC<LayoutEditorProps> = ({ layout, onChange, settings,
         const payload = await response.json();
         if (cancelled) return;
 
-        setShopifyProducts(Array.isArray(payload?.products) ? payload.products : []);
+        const nextProducts = Array.isArray(payload?.products) ? payload.products : [];
+        setShopifyProducts((prev) => {
+          if (!productRequestCursor) {
+            return nextProducts;
+          }
+
+          const merged = new Map(prev.map((product) => [product.handle, product]));
+          nextProducts.forEach((product) => {
+            if (product?.handle) {
+              merged.set(product.handle, product);
+            }
+          });
+          return Array.from(merged.values());
+        });
+        setHasMoreShopifyProducts(Boolean(payload?.hasNextPage));
+        setNextProductListCursor(payload?.nextCursor || null);
         setProductPickerStatus('ready');
       } catch (error) {
         if (cancelled || controller.signal.aborted) return;
         console.warn('Unable to load Shopify product list.', error);
         setShopifyProducts([]);
+        setNextProductListCursor(null);
+        setHasMoreShopifyProducts(false);
         setProductPickerStatus('error');
       }
     }, 250);
@@ -203,7 +235,7 @@ const LayoutEditor: React.FC<LayoutEditorProps> = ({ layout, onChange, settings,
       controller.abort();
       window.clearTimeout(timeoutId);
     };
-  }, [productSearch]);
+  }, [productRequestCursor, productSearch]);
 
   useEffect(() => {
     if (typeof window === 'undefined') return undefined;
@@ -735,6 +767,11 @@ const LayoutEditor: React.FC<LayoutEditorProps> = ({ layout, onChange, settings,
     });
 
     pushMessage('Shopify product link cleared.');
+  };
+
+  const handleLoadMoreProducts = () => {
+    if (!hasMoreShopifyProducts || productPickerStatus === 'loading') return;
+    setProductRequestCursor(nextProductListCursor);
   };
 
   const getSelectionFrames = (keys: string[]) => keys
@@ -1307,29 +1344,41 @@ const LayoutEditor: React.FC<LayoutEditorProps> = ({ layout, onChange, settings,
             <p className="text-xs text-slate-500">No Shopify products matched that search.</p>
           )}
           {!!shopifyProducts.length && (
-            <div className="max-h-56 space-y-2 overflow-y-auto pr-1">
-              {shopifyProducts.map((product) => {
-                const isSelected = product.handle === layout.shopifyProductHandle;
-                return (
-                  <button
-                    key={product.handle}
-                    type="button"
-                    onClick={() => handleApplyShopifyProduct(product)}
-                    className={`w-full rounded-2xl border px-4 py-3 text-left transition-colors ${isSelected ? 'border-blue-500 bg-blue-50' : 'border-slate-200 bg-white hover:border-slate-300'}`}
-                  >
-                    <div className="flex items-start justify-between gap-3">
-                      <div className="min-w-0">
-                        <p className="truncate text-sm font-black text-slate-900">{product.title}</p>
-                        <p className="mt-1 truncate text-[11px] font-semibold uppercase tracking-[0.24em] text-slate-500">{product.handle}</p>
+            <div className="space-y-3">
+              <div className="max-h-56 space-y-2 overflow-y-auto pr-1">
+                {shopifyProducts.map((product) => {
+                  const isSelected = product.handle === layout.shopifyProductHandle;
+                  return (
+                    <button
+                      key={product.handle}
+                      type="button"
+                      onClick={() => handleApplyShopifyProduct(product)}
+                      className={`w-full rounded-2xl border px-4 py-3 text-left transition-colors ${isSelected ? 'border-blue-500 bg-blue-50' : 'border-slate-200 bg-white hover:border-slate-300'}`}
+                    >
+                      <div className="flex items-start justify-between gap-3">
+                        <div className="min-w-0">
+                          <p className="truncate text-sm font-black text-slate-900">{product.title}</p>
+                          <p className="mt-1 truncate text-[11px] font-semibold uppercase tracking-[0.24em] text-slate-500">{product.handle}</p>
+                        </div>
+                        {isSelected && <span className="text-[10px] font-black uppercase tracking-[0.28em] text-blue-600">Selected</span>}
                       </div>
-                      {isSelected && <span className="text-[10px] font-black uppercase tracking-[0.28em] text-blue-600">Selected</span>}
-                    </div>
-                    {!!product.tags.length && (
-                      <p className="mt-2 line-clamp-2 text-xs text-slate-500">Tags: {product.tags.join(', ')}</p>
-                    )}
-                  </button>
-                );
-              })}
+                      {!!product.tags.length && (
+                        <p className="mt-2 line-clamp-2 text-xs text-slate-500">Tags: {product.tags.join(', ')}</p>
+                      )}
+                    </button>
+                  );
+                })}
+              </div>
+              {hasMoreShopifyProducts && (
+                <button
+                  type="button"
+                  onClick={handleLoadMoreProducts}
+                  disabled={productPickerStatus === 'loading'}
+                  className="w-full rounded-xl border border-slate-200 bg-white px-4 py-2.5 text-[11px] font-black uppercase tracking-[0.24em] text-slate-600 disabled:cursor-not-allowed disabled:opacity-60"
+                >
+                  {productPickerStatus === 'loading' ? 'Loading More…' : 'Load More Products'}
+                </button>
+              )}
             </div>
           )}
           <p className="text-[11px] leading-relaxed text-slate-500">Selecting a product stores its handle on the layout and syncs this layout's Shopify trigger tags from that product so the storefront button can target the right card.</p>
