@@ -343,6 +343,9 @@ interface ShopifyCapabilities {
   productProxyEnabled: boolean;
   tagLookupEnabled: boolean;
   cartEnabled: boolean;
+  productProxyReason?: string | null;
+  tagLookupReason?: string | null;
+  cartReason?: string | null;
 }
 
 const normalizeVariantPrice = (value: unknown) => {
@@ -994,6 +997,7 @@ const CustomizerScreen = ({ layout, onBack, onComplete, settings, productHandle,
   const quantitySidebarCopy = cartEnabled
     ? 'A print-ready PDF attaches to your Shopify cart as soon as you approve. Front and back files stay in sync with your selections.'
     : 'Approved proofs are stored on the server so your Theme Vault rep can invoice and send the order to production manually.';
+  const showCartDisabledWarning = productOptions.length > 0 && !cartEnabled;
   const quantityStep = (
     <div className="space-y-6">
       <div className="flex items-center justify-between">
@@ -1008,6 +1012,12 @@ const CustomizerScreen = ({ layout, onBack, onComplete, settings, productHandle,
           {!cartEnabled && (
             <div className="rounded-2xl border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm text-emerald-800">
               Share the approved proof reference with {settings.businessEmail || 'your Theme Vault rep'} so we can invoice and queue production. Variant selections below help you specify the quantity.
+            </div>
+          )}
+          {showCartDisabledWarning && (
+            <div className="rounded-2xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-800">
+              Shopify cart mode is off for this host. {settings.businessEmail ? 'The current setup is still in manual proof mode. ' : ''}
+              {shopifyCapabilities.cartReason || 'Add SHOPIFY_STOREFRONT_TOKEN to the server environment and restart the app to re-enable Add to Cart.'}
             </div>
           )}
           {!effectiveProductHandle && !tagLookupActive && (
@@ -1147,7 +1157,10 @@ const MainLayout = () => {
   const [shopifyCapabilities, setShopifyCapabilities] = useState<ShopifyCapabilities>({
     productProxyEnabled: true,
     tagLookupEnabled: SHOPIFY_TAG_LOOKUP_ENABLED,
-    cartEnabled: SHOPIFY_CART_ENABLED
+    cartEnabled: SHOPIFY_CART_ENABLED,
+    productProxyReason: null,
+    tagLookupReason: null,
+    cartReason: null
   });
   const shopifyQueryTags = useMemo(() => getShopifyQueryTags(), []);
   const productHandle = useMemo(() => getProductHandleFromQuery(), []);
@@ -1230,7 +1243,10 @@ const MainLayout = () => {
         setShopifyCapabilities({
           productProxyEnabled: Boolean(payload?.productProxyEnabled),
           tagLookupEnabled: Boolean(payload?.tagLookupEnabled),
-          cartEnabled: Boolean(payload?.cartEnabled)
+          cartEnabled: Boolean(payload?.cartEnabled),
+          productProxyReason: typeof payload?.productProxyReason === 'string' ? payload.productProxyReason : null,
+          tagLookupReason: typeof payload?.tagLookupReason === 'string' ? payload.tagLookupReason : null,
+          cartReason: typeof payload?.cartReason === 'string' ? payload.cartReason : null
         });
       } catch (error) {
         console.warn('Unable to load Shopify capabilities.', error);

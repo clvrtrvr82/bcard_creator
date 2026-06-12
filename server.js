@@ -387,10 +387,19 @@ const fetchAdminProducts = async ({ query = '', limit = 50, cursor = null } = {}
 };
 
 app.get('/api/shopify-capabilities', (_req, res) => {
+  const productProxyCheck = withShopifyConfig(false);
+  const cartCheck = withShopifyConfig(true);
   return res.json({
     productProxyEnabled: Boolean(SHOPIFY_BASE_URL),
     tagLookupEnabled: SHOPIFY_TAG_LOOKUP_ENABLED,
-    cartEnabled: SHOPIFY_CART_ENABLED
+    cartEnabled: SHOPIFY_CART_ENABLED,
+    productProxyReason: productProxyCheck.ok ? null : productProxyCheck.message,
+    tagLookupReason: SHOPIFY_TAG_LOOKUP_ENABLED ? null : 'Shopify tag lookup is disabled on this host.',
+    cartReason: cartCheck.ok && SHOPIFY_CART_ENABLED
+      ? null
+      : cartCheck.ok
+        ? 'Shopify cart integration is disabled on this host. Add SHOPIFY_STOREFRONT_TOKEN and restart the server.'
+        : cartCheck.message
   });
 });
 
