@@ -365,6 +365,39 @@ const normalizeVariantPrice = (value: unknown) => {
   return Number.isInteger(numeric) ? numeric : Math.round(numeric * 100);
 };
 
+const toBase64Url = (value: string) => {
+  const utf8 = new TextEncoder().encode(value);
+  let binary = '';
+  utf8.forEach((byte) => {
+    binary += String.fromCharCode(byte);
+  });
+  return window.btoa(binary).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/g, '');
+};
+
+const buildShopifyCartPermalink = ({
+  returnUrl,
+  variantId,
+  quantity,
+  properties
+}: {
+  returnUrl: string;
+  variantId: number;
+  quantity: number;
+  properties: Record<string, string>;
+}) => {
+  const parsed = new URL(returnUrl);
+  const params = new URLSearchParams({ storefront: 'true' });
+  const propertyEntries = Object.entries(properties)
+    .filter(([, value]) => String(value || '').trim())
+    .slice(0, 25);
+
+  if (propertyEntries.length) {
+    params.set('properties', toBase64Url(JSON.stringify(Object.fromEntries(propertyEntries))));
+  }
+
+  return `${parsed.origin}/cart/${variantId}:${Math.max(1, quantity)}?${params.toString()}`;
+};
+
 const PRODUCT_REQUEST_TIMEOUT_MS = 12000;
 
 const fetchWithTimeout = async (input: RequestInfo | URL, init: RequestInit = {}, timeoutMs = PRODUCT_REQUEST_TIMEOUT_MS) => {
@@ -717,7 +750,7 @@ const CustomizerScreen = ({ layout, onBack, onComplete, settings, productHandle,
   };
 
   const handleFinalizeRequest = async () => {
-    if (cartEnabled && !selectedVariant) {
+    if ((cartEnabled || returnUrl) && !selectedVariant) {
       alert('Select a quantity option before continuing.');
       return;
     }
@@ -757,6 +790,16 @@ const CustomizerScreen = ({ layout, onBack, onComplete, settings, productHandle,
         } else {
           alert('Cart created but no checkout URL was returned. Please review Shopify response.');
         }
+      } else if (returnUrl && selectedVariant) {
+        onComplete(data);
+        const redirectUrl = buildShopifyCartPermalink({
+          returnUrl,
+          variantId: selectedVariant.id,
+          quantity: 1,
+          properties: buildLineItemProperties(proofReference)
+        });
+        window.location.href = redirectUrl;
+        return;
       } else {
         onComplete(data);
         if (returnUrl) {
@@ -992,12 +1035,21 @@ const CustomizerScreen = ({ layout, onBack, onComplete, settings, productHandle,
   );
 
   const quantityHeading = cartEnabled ? 'Select production quantity' : 'Finalize your print request';
-  const finalizeDisabled = cartEnabled ? !selectedVariant || checkoutStatus === 'loading' : checkoutStatus === 'loading';
-  const finalizeCtaLabel = cartEnabled ? (checkoutStatus === 'loading' ? 'Adding…' : 'Add to Cart') : (checkoutStatus === 'loading' ? 'Preparing…' : 'Email Order Request');
+  const canUseCartPermalinkFallback = !cartEnabled && canReturnToProduct;
+  const finalizeDisabled = (cartEnabled || canUseCartPermalinkFallback)
+    ? !selectedVariant || checkoutStatus === 'loading'
+    : checkoutStatus === 'loading';
+  const finalizeCtaLabel = cartEnabled
+    ? (checkoutStatus === 'loading' ? 'Adding…' : 'Add to Cart')
+    : canUseCartPermalinkFallback
+      ? (checkoutStatus === 'loading' ? 'Redirecting…' : 'Add to Shopify Cart')
+      : (checkoutStatus === 'loading' ? 'Preparing…' : 'Email Order Request');
   const quantitySidebarCopy = cartEnabled
     ? 'A print-ready PDF attaches to your Shopify cart as soon as you approve. Front and back files stay in sync with your selections.'
-    : 'Approved proofs are stored on the server so your Theme Vault rep can invoice and send the order to production manually.';
-  const showCartDisabledWarning = productOptions.length > 0 && !cartEnabled;
+    : canUseCartPermalinkFallback
+      ? 'A print-ready PDF reference is attached to the selected Shopify cart item before the buyer returns to your Shopify cart.'
+      : 'Approved proofs are stored on the server so your Theme Vault rep can invoice and send the order to production manually.';
+  const showCartDisabledWarning = productOptions.length > 0 && !cartEnabled && !canUseCartPermalinkFallback;
   const quantityStep = (
     <div className="space-y-6">
       <div className="flex items-center justify-between">
@@ -1009,9 +1061,14 @@ const CustomizerScreen = ({ layout, onBack, onComplete, settings, productHandle,
       </div>
       <div className="grid grid-cols-1 lg:grid-cols-[1fr_360px] gap-6">
         <div className="bg-white border border-slate-200 rounded-[22px] p-5 space-y-4">
-          {!cartEnabled && (
+          {!cartEnabled && !canUseCartPermalinkFallback && (
             <div className="rounded-2xl border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm text-emerald-800">
               Share the approved proof reference with {settings.businessEmail || 'your Theme Vault rep'} so we can invoice and queue production. Variant selections below help you specify the quantity.
+            </div>
+          )}
+          {canUseCartPermalinkFallback && (
+            <div className="rounded-2xl border border-blue-200 bg-blue-50 px-4 py-3 text-sm text-blue-800">
+              This store is using the Shopify cart fallback path. Your selected quantity and card details will be attached to the item, then the buyer will be returned to the Shopify cart.
             </div>
           )}
           {showCartDisabledWarning && (
