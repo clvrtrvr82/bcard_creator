@@ -2,111 +2,154 @@
 <img width="1200" height="475" alt="GHBanner" src="https://github.com/user-attachments/assets/0aa67016-6eaf-458a-adb2-6e31a0763ed6" />
 </div>
 
-# Run and deploy your AI Studio app
+# Theme Vault Designer
 
-This contains everything you need to run your app locally.
+Business-card designer for branded hotel products. Customers enter card details, preview the approved layout, download proofs, and optionally continue into Shopify checkout with the selected card quantity variant.
 
-View your app in AI Studio: https://ai.studio/apps/drive/1tlRidWHl7-sCtwPqxSOcLYLYCgfsU_bd
+## What this repo does
 
-## Run Locally (Mac host)
+- Serves a React/Vite card designer and admin dashboard.
+- Generates a public layout manifest from `constants.ts` during build.
+- Exposes Shopify helper routes through the Express server:
+  - `GET /products/:handle.js`
+  - `GET /api/shopify-products`
+  - `GET /api/shopify-products-by-tags`
+  - `POST /cart/add.js`
+- Stores admin-saved layouts separately from the static seed layouts.
+- Stores approved proof PDFs on the server and can email them when SMTP is configured.
 
-**Prerequisites:** Node.js 18+ (ships with global `fetch`).
+## Requirements
 
-1. Install dependencies: `npm install`
-2. Copy `.env.example` → `.env.local` and fill in:
-   - `SHOPIFY_STORE_DOMAIN` (e.g. `holidayprint.myshopify.com`)
-   - Optional `SHOPIFY_STOREFRONT_TOKEN` (required only when you want the app to create Shopify carts or query tags via GraphQL)
-   - Optional `SHOPIFY_ADMIN_ACCESS_TOKEN` (required when Locksmith or other storefront gating prevents public product/tag lookup)
-   - Optional `HOST=0.0.0.0` so other devices can hit your Mac’s IP.
-3. To re-enable the Shopify cart or tag lookup flows, also add the following Vite flags to `.env.local` and set them to `true`:
-   - `VITE_ENABLE_SHOPIFY_CART`
-   - `VITE_ENABLE_SHOPIFY_TAG_LOOKUP`
-   Leave them unset/false to stay in token-free mode.
-4. Build the production bundle: `npm run build`
-5. Serve it with the Express layer: `npm run start`
-6. Visit `http://localhost:3000` or `http://<YOUR_MAC_IP>:3000` from Shopify/theme previews.
+- Node.js 18+
+- npm
+- Shopify store domain for product lookup
+- Optional Shopify Storefront API token for cart checkout
+- Optional Shopify Admin API token for Locksmith-protected product lookup
 
-### Token-free mode (default)
+## Available scripts
 
-- Leave the Storefront token and Vite flags unset to run in “manual handoff” mode. Guests can still customize cards, download proofs, and send the reference to your print team—no Shopify app privileges required.
-- Without the token/flags the Express layer automatically disables `/api/shopify-products-by-tags` and `/cart/add.js`, so Cloudways never attempts Storefront API calls it cannot authenticate.
-- When you later gain Storefront API access, add the token plus flip both Vite flags to `true`, rebuild, and the cart + tag lookup flows reactivate automatically.
+The current repo exposes only these npm scripts:
 
-### Provide handles instead of tags
+- `npm run build`
+- `npm start`
 
-- Tags are optional. Point the Vault CTA directly at the app using `?product={{ product.handle }}` or store a handle per layout inside `constants.ts`. The designer will call the public `/products/<handle>.js` endpoint to pull variants.
-- If you eventually enable tag lookup, keep the CTA as-is; the designer will fall back to tags only when the feature flag is on.
+There is no active `bootstrap` script in the current `package.json`.
 
-With the Shopify features enabled, the Express server proxies both `GET /products/:handle.js` and `POST /cart/add.js` to Shopify. When disabled, only the public product endpoint stays active and the checkout step becomes a manual approval + email workflow.
+## Local run
 
-## Deploy on Cloudways (PM2)
+1. Install dependencies:
+   ```bash
+   npm install
+   ```
+2. Copy `.env.example` to `.env.local`.
+3. Set the environment values you need:
+   - `SHOPIFY_STORE_DOMAIN`
+   - Optional `SHOPIFY_STOREFRONT_TOKEN`
+   - Optional `SHOPIFY_ADMIN_ACCESS_TOKEN`
+   - Optional `SHOPIFY_API_VERSION`
+   - Optional `HOST`
+   - Optional `PORT`
+   - Optional SMTP values for proof email:
+     - `SMTP_HOST`
+     - `SMTP_PORT`
+     - `SMTP_SECURE`
+     - `SMTP_USER`
+     - `SMTP_PASS`
+     - `SMTP_FROM_EMAIL`
+     - `PROOF_NOTIFICATION_EMAIL`
+4. If you want the browser UI to enable the live Shopify flows, also add these Vite flags to `.env.local`:
+   ```bash
+   VITE_ENABLE_SHOPIFY_CART=true
+   VITE_ENABLE_SHOPIFY_TAG_LOOKUP=true
+   ```
+5. Build the app:
+   ```bash
+   npm run build
+   ```
+6. Start the Express server:
+   ```bash
+   npm start
+   ```
+7. Open `http://localhost:3000`.
 
-1. `npm run bootstrap`
-   - Runs the full clean + install sequence so `vite` (and every other CLI) exists before you build.
-2. `npm run build` (produces `dist/`)
-3. `pm2 start ecosystem.config.cjs` (note the `.cjs` extension—`pm2 start ecosystem.config.js` will fail)
-4. Tail logs with `pm2 logs card-app` and test `https://<your-app-domain>`
+## Feature switches
 
-> `clean:modules` completely removes `node_modules`.
-> `npm start` now bootstraps `server.js` and will exit early if `dist/index.html` is missing—watch PM2 logs for that guard message.
+### Product lookup
 
-## Verify the app is live
+- `GET /products/:handle.js` works when `SHOPIFY_STORE_DOMAIN` is configured.
+- If `SHOPIFY_ADMIN_ACCESS_TOKEN` is present, the server tries Shopify Admin first and falls back to storefront product JSON when needed.
+
+### Tag lookup
+
+- The server route `/api/shopify-products-by-tags` is available when `SHOPIFY_STORE_DOMAIN` is set.
+- The React app only uses the tag lookup flow when `VITE_ENABLE_SHOPIFY_TAG_LOOKUP=true`.
+
+### Cart checkout
+
+- The checkout step requires both:
+  - `SHOPIFY_STOREFRONT_TOKEN`
+  - `VITE_ENABLE_SHOPIFY_CART=true`
+- Without them, the app stays in manual proof / handoff mode.
+
+### Proof email
+
+- `POST /api/proofs` always stores the PDF in `proofs/`.
+- Email delivery happens only when SMTP settings are configured.
+
+## Build outputs and saved data
+
+- `npm run build` runs `node ./scripts/build-layout-index.mjs && vite build`.
+- `scripts/build-layout-index.mjs` reads `constants.ts` and writes `public/layout-index.json`.
+- Vite then copies that file into `dist/` for production serving.
+- Admin-saved layouts are stored separately in `data/brand-configs.json` through `PUT /api/layouts`.
+- The public CTA manifest merges build-time layouts with saved server layouts at runtime.
+
+## Deploy with PM2
+
+This repo is configured to run with:
+
 ```bash
-pm2 status card-app          # should show online + uptime
-curl http://127.0.0.1:3000/  # confirm the Node layer responds
-curl -I https://<your-app-domain>/  # confirm Apache is proxying through
+pm2 start ecosystem.config.cjs
 ```
 
-## Troubleshoot Apache 500 errors (Cloudways)
+Recommended deploy sequence:
 
-1. Tail Apache’s error log to see why the proxy failed:
-   ```bash
-   tail -n 100 /home/1316548.cloudwaysapps.com/jfkaeqbfmn/logs/apache_error.log
-   ```
-2. Confirm the Node app is healthy (already works via PM2):
-   ```bash
-   curl -I http://127.0.0.1:3000/ && curl -I http://127.0.0.1:3000/healthz
-   ```
-3. Compare the public proxy response:
-   ```bash
-   curl -I https://<your-app-domain>/
-   ```
-4. Ensure the `.htaccess` proxy file still matches the repo version (Cloudways disallows `ProxyPassReverse` inside `.htaccess`, so keep only the rewrite block):
-   ```bash
-   ls -alh /home/1316548.cloudwaysapps.com/jfkaeqbfmn/public_html/.htaccess
-   cat   /home/1316548.cloudwaysapps.com/jfkaeqbfmn/public_html/.htaccess
-   ```
-5. If Apache reports “proxy module disabled,” open a Cloudways ticket to re-enable `mod_proxy` for the application (the Node process is already healthy per step 2).
+1. `npm install`
+2. `npm run build`
+3. `pm2 start ecosystem.config.cjs`
+4. `pm2 logs card-app`
 
-## MIME error: “Expected a JavaScript module”
-If you see `index.tsx` in the browser console, Apache is serving the source HTML. Run:
+Useful checks:
+
 ```bash
-npm run build
+pm2 status card-app
+curl http://127.0.0.1:3000/
+curl http://127.0.0.1:3000/healthz
 ```
-Then ensure the updated `.htaccess` (in this repo) is deployed so Apache serves `dist/index.html` and `dist/assets/*`.
 
-## Public manifest vs saved admin state
+If the server exits immediately, the first thing to verify is that `dist/index.html` exists. `server.js` will refuse to start without a built bundle.
 
-- `layout-index.json` is a build artifact generated from `constants.ts` during `npm run build`. The Shopify CTA reads only this public manifest.
-- Saved admin edits are separate. The dashboard persists them through `PUT /api/layouts`, and the Express server stores them in `data/brand-configs.json` for the in-app admin/designer flows.
-- Preview images are intentionally omitted from the public `layout-index.json` payload so the CTA endpoint stays small and only exposes the fields it needs for tag matching.
+## Apache / Cloudways note
 
-### Clear saved server layouts
+This repo includes `.htaccess` for serving the built app from `dist/`. If Apache serves source files or returns a module MIME error, rebuild and redeploy the updated `dist/` output plus `.htaccess`.
 
-- On Render, clear the persisted admin snapshot with:
-   ```bash
-   curl -X DELETE https://bcard-creator.onrender.com/api/layouts
-   ```
-- If you have shell access, deleting `data/brand-configs.json` has the same effect.
+## Shopify CTA
 
-### Sync saved admin layouts
+The hosted CTA script is served from:
 
-- The admin dashboard already supports export/import. Export the good layout set, then import it into the live Render-hosted admin to overwrite the saved server state.
-- For direct API sync, send the exported `brandConfigs` object back to `PUT /api/layouts`. That updates the saved admin state without changing the public CTA manifest.
+```text
+/designer-shopify-cta.js
+```
 
-## Shopify tag-triggered CTA
+The current script in `public/designer-shopify-cta.js` is hardcoded to use:
 
-Add this to each Shopify product template that should show the designer CTA. If some products use a different template, add the same mount div there too, or place it in a shared Custom liquid block used by those templates. The hosted script handles the tag lookup and button rendering.
+```text
+https://bcard-creator.onrender.com
+```
+
+If you want the Shopify product-page button to point at a different host, update that constant before deploying.
+
+Add this mount to Shopify product templates that should show the CTA:
 
 ```liquid
 <div
@@ -118,4 +161,25 @@ Add this to each Shopify product template that should show the designer CTA. If 
 <script src="https://bcard-creator.onrender.com/designer-shopify-cta.js" defer></script>
 ```
 
-That works for any product whose Shopify tags overlap with a layout’s `shopifyTags` array in the app. The hosted script first reads the tags already rendered into the product page by Liquid, so the CTA can appear even when Locksmith or another storefront gate interferes with extra product JSON requests. If those inline tags are unavailable, the script falls back to this app’s `/products/<handle>.js` route and reads the tags there instead. If `SHOPIFY_ADMIN_ACCESS_TOKEN` is configured, the app resolves that product through Shopify Admin API, which lets Locksmith-protected products still expose tags and variants to the designer flow without relying on the storefront’s public product JSON endpoint. When the CTA opens the app, the layout selection screen is filtered to only the layouts whose `shopifyTags` match the incoming product tags, keeps the originating Shopify product URL in `returnTo`, and loads the product variants so the customer can choose the print quantity before checkout. It also falls back to the built-in tag map if the live manifest fetch is stale or unavailable. Locksmith can continue to gate the product page as usual, and the app still receives `?product=`, the matched `tags`, and the product return URL.
+The CTA script:
+
+- loads the layout manifest
+- compares product tags and optional product-handle matches
+- links into the app with `product`, `tags`, `layoutId`, and `returnTo`
+- allows the user to choose Shopify variants for quantity when available
+
+## Return flow
+
+- The app preserves the originating Shopify product URL through `returnTo`.
+- In cart-enabled mode, the user is redirected to Shopify checkout.
+- In manual mode, the app stores the proof and supports the approval / handoff workflow without Shopify checkout.
+
+## Reset saved layouts
+
+Clear the saved server-side admin layouts with:
+
+```bash
+curl -X DELETE https://bcard-creator.onrender.com/api/layouts
+```
+
+Deleting `data/brand-configs.json` has the same effect if you have shell access.
