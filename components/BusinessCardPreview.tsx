@@ -22,6 +22,18 @@ const toTitleCase = (str: string) => {
   return str.replace(/\w\S*/g, (txt) => txt.charAt(0).toUpperCase() + txt.substr(1).toLowerCase());
 };
 
+const measureTextWidth = (text: string, fontSize: number, fontFamily: string, fontWeight: string): number => {
+  try {
+    const canvas = document.createElement('canvas');
+    const ctx = canvas.getContext('2d');
+    if (!ctx) return 0;
+    ctx.font = `${fontWeight} ${fontSize}px ${fontFamily}`;
+    return ctx.measureText(text).width;
+  } catch {
+    return 0;
+  }
+};
+
 const evaluateRule = (value: string, rule: ConditionalRule): boolean => {
   const val = value || '';
   switch (rule.condition) {
@@ -143,11 +155,11 @@ const BusinessCardPreview = React.forwardRef<HTMLDivElement, BusinessCardPreview
     transformOrigin: 'top left',
     flexShrink: 0,
     boxShadow: showProof ? 'none' : '0 15px 30px -10px rgba(0, 0, 0, 0.15)',
-    border: showProof ? '1px solid #e2e8f0' : 'none',
+    border: '1px solid #cbd5e1',
     cursor: onFieldClick ? 'crosshair' : 'default',
     backfaceVisibility: 'hidden',
     userSelect: 'none',
-    borderRadius: showProof ? '2px' : '0'
+    borderRadius: '2px'
   };
 
   const formatWithPattern = (value: string, pattern: string) => {
@@ -258,7 +270,19 @@ const BusinessCardPreview = React.forwardRef<HTMLDivElement, BusinessCardPreview
       fontStyle: styled.fontStyle || 'normal',
       fontFamily: styled.fontFamily || 'Inter, sans-serif',
       textAlign: styled.textAlign || 'left',
-      letterSpacing: styled.letterSpacing || 'normal',
+      letterSpacing: (() => {
+        if (styled.charLimit && displayContent.length >= styled.charLimit) {
+          const constraintWidth = styled.maxWidth || styled.width;
+          if (constraintWidth) {
+            const measured = measureTextWidth(displayContent, styled.fontSize, styled.fontFamily, styled.fontWeight);
+            if (measured > constraintWidth) {
+              const spacingAdj = (constraintWidth - measured) / Math.max(displayContent.length, 1);
+              return `${spacingAdj.toFixed(2)}px`;
+            }
+          }
+        }
+        return styled.letterSpacing || 'normal';
+      })(),
       lineHeight: styled.lineHeight || 1.25,
       textDecoration: styled.textDecoration || 'none',
       opacity: styled.opacity !== undefined ? styled.opacity : 1,

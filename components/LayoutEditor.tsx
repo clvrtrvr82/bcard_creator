@@ -937,6 +937,10 @@ const LayoutEditor: React.FC<LayoutEditorProps> = ({ layout, onChange, settings,
 
   const handleEnsureBackSide = () => {
     if (layout.back) return;
+    commitLayout((draft) => {
+      draft.back = createBackTemplate();
+    });
+    setActiveSide('back');
   };
 
   const openFieldEditor = (
@@ -1207,13 +1211,16 @@ const LayoutEditor: React.FC<LayoutEditorProps> = ({ layout, onChange, settings,
               </div>
             )}
             {!layout.previewImage && (
-              <p className="text-[11px] text-slate-500">Upload a customer preview image to compare the final approved look over the live layout while placing fields.</p>
+              <p className="text-[11px] text-slate-500">Upload a layout overlay image to compare field placement against the final artwork. The overlay only shows in this editor—it never appears in the customer proof.</p>
             )}
+            <div className="rounded-2xl border border-amber-100 bg-amber-50 px-3 py-2.5 text-[11px] text-amber-700">
+              <span className="font-black uppercase tracking-[0.2em]">Spec:</span> 1050 &times; 600 px (300 dpi, 3.5&quot; &times; 2&quot;) &middot; PNG or SVG preferred for crisp lines.
+            </div>
             <div className="grid grid-cols-1 gap-4 text-[11px]">
               <label className="flex flex-col gap-2 text-xs font-black uppercase tracking-[0.3em] text-slate-500">
-                <span className="flex items-center gap-2"><ImageIcon size={14} /> Template Image</span>
-                <input ref={templateImageInputRef} type="file" accept="image/*" onChange={(e) => handleBackgroundUpload(e.target.files?.[0])} className="block w-full text-[11px]" />
-                <span className="text-[11px] normal-case tracking-normal text-slate-500">This is the front or back artwork that prints behind the personalized text and also acts as your placement guide.</span>
+                <span className="flex items-center gap-2"><ImageIcon size={14} /> Background / Print Artwork</span>
+                <input ref={templateImageInputRef} type="file" accept="image/*,.svg" onChange={(e) => handleBackgroundUpload(e.target.files?.[0])} className="block w-full text-[11px]" />
+                <span className="text-[11px] normal-case tracking-normal text-slate-500">The actual artwork that prints behind all text fields. Supply the same file you send to print (PNG, SVG, or PDF-exported PNG at 300 dpi / 1050&times;600 px).</span>
               </label>
               {sideLayout.backgroundImage && (
                 <div className="flex flex-wrap items-center justify-between gap-3 rounded-2xl border border-slate-200 bg-slate-50 px-3 py-2.5 text-xs text-slate-600">
@@ -1276,6 +1283,24 @@ const LayoutEditor: React.FC<LayoutEditorProps> = ({ layout, onChange, settings,
                         </div>
                       </button>
                       <div className="shrink-0 flex flex-col gap-2">
+                        <div className="flex gap-1">
+                          <button
+                            type="button"
+                            onClick={() => handleReorderField(entry.key, 'up')}
+                            className="p-2 rounded-xl bg-white border border-slate-200 text-slate-500 hover:border-slate-400"
+                            title="Move up"
+                          >
+                            <ChevronUp size={14} />
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => handleReorderField(entry.key, 'down')}
+                            className="p-2 rounded-xl bg-white border border-slate-200 text-slate-500 hover:border-slate-400"
+                            title="Move down"
+                          >
+                            <ChevronDown size={14} />
+                          </button>
+                        </div>
                         <button
                           type="button"
                           onClick={() => {
@@ -1412,9 +1437,9 @@ const LayoutEditor: React.FC<LayoutEditorProps> = ({ layout, onChange, settings,
           </label>
         </div>
         <div>
-          <label className="text-[11px] font-black uppercase tracking-[0.3em] text-slate-400">Customer Preview Image
-            <input ref={previewImageInputRef} type="file" accept="image/*" onChange={(e) => handlePreviewUpload(e.target.files?.[0])} className="mt-2 block w-full text-[11px]" />
-            <span className="mt-2 block text-[11px] normal-case tracking-normal text-slate-500">Shown to customers in the layout gallery. If you leave this empty, the app can still render a live preview from the template and field positions.</span>
+          <label className="text-[11px] font-black uppercase tracking-[0.3em] text-slate-400">Field Placement Overlay
+            <input ref={previewImageInputRef} type="file" accept="image/*,.svg" onChange={(e) => handlePreviewUpload(e.target.files?.[0])} className="mt-2 block w-full text-[11px]" />
+            <span className="mt-2 block text-[11px] normal-case tracking-normal text-slate-500">Upload your artwork here to use as a semi-transparent overlay while positioning fields. Toggle it on/off with the <strong>Preview On/Off</strong> button in the canvas toolbar. Recommended: 1050 &times; 600 px PNG or SVG.</span>
           </label>
           {layout.previewImage && (
             <div className="mt-3 flex flex-wrap items-center justify-between gap-3 rounded-2xl border border-slate-200 bg-slate-50 px-3 py-2.5 text-xs text-slate-600">
@@ -1714,6 +1739,10 @@ const LayoutEditor: React.FC<LayoutEditorProps> = ({ layout, onChange, settings,
                       <label className="text-xs font-semibold text-slate-500">Default Text
                         <input value={selectedField.value || ''} onChange={(e) => handleFieldValueChange(selectedFieldKey, 'value', e.target.value)} className="mt-1.5 w-full px-3 py-2.5 rounded-xl bg-white border border-slate-200 text-sm text-slate-800" />
                       </label>
+                      <label className="text-xs font-semibold text-slate-500 lg:col-span-2">Placeholder Text
+                        <input value={selectedField.placeholder || ''} onChange={(e) => handleFieldValueChange(selectedFieldKey, 'placeholder', e.target.value)} placeholder="e.g. Enter your full name…" className="mt-1.5 w-full px-3 py-2.5 rounded-xl bg-white border border-slate-200 text-sm text-slate-800" />
+                        <span className="mt-1 block text-[11px] text-slate-400">The hint text shown inside the input before the customer types.</span>
+                      </label>
                     </div>
                     <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
                       <label className="text-xs font-semibold text-slate-500 lg:col-span-2">Pick A Font
@@ -1865,6 +1894,10 @@ const LayoutEditor: React.FC<LayoutEditorProps> = ({ layout, onChange, settings,
                             </label>
                             <label className="text-xs font-semibold text-slate-500">Suffix
                               <input value={selectedField.suffix || ''} onChange={(e) => handleFieldValueChange(selectedFieldKey, 'suffix', e.target.value)} className="mt-1.5 w-full px-3 py-2.5 rounded-xl bg-slate-50 border border-slate-200 text-sm text-slate-800" />
+                            </label>
+                            <label className="text-xs font-semibold text-slate-500">Max Characters
+                              <input type="number" min={0} value={selectedField.charLimit ?? ''} onChange={(e) => handleFieldValueChange(selectedFieldKey, 'charLimit', Number(e.target.value) || undefined)} className="mt-1.5 w-full px-3 py-2.5 rounded-xl bg-slate-50 border border-slate-200 text-sm text-slate-800" />
+                              <span className="mt-1 block text-[11px] text-slate-400">Letter spacing auto-compresses to keep text within Max Width when the limit is reached.</span>
                             </label>
                             <div className="flex items-center justify-between gap-4 rounded-xl border border-slate-200 bg-slate-50 px-4 py-3">
                               <div>

@@ -66,6 +66,7 @@ export interface FieldStyle {
   required?: boolean;
   id?: string;
   label?: string;
+  placeholder?: string;
   value?: string;
   pattern?: string;
   conditionalRules?: ConditionalRule[];

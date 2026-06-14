@@ -374,6 +374,85 @@ const toBase64Url = (value: string) => {
   return window.btoa(binary).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/g, '');
 };
 
+const ADDRESS_FIELD_KEYS = new Set(['addressLine1', 'addressLine2', 'address', 'address1', 'address2']);
+
+const AddressAutocomplete: React.FC<{
+  value: string;
+  onChange: (val: string) => void;
+  placeholder?: string;
+  hasError?: boolean;
+  ariaRequired?: boolean;
+  ariaInvalid?: boolean;
+}> = ({ value, onChange, placeholder, hasError, ariaRequired, ariaInvalid }) => {
+  const [suggestions, setSuggestions] = React.useState<string[]>([]);
+  const [open, setOpen] = React.useState(false);
+  const debounceRef = React.useRef<ReturnType<typeof setTimeout> | null>(null);
+  const containerRef = React.useRef<HTMLDivElement>(null);
+
+  React.useEffect(() => {
+    const handleClick = (e: MouseEvent) => {
+      if (containerRef.current && !containerRef.current.contains(e.target as Node)) {
+        setOpen(false);
+      }
+    };
+    document.addEventListener('mousedown', handleClick);
+    return () => document.removeEventListener('mousedown', handleClick);
+  }, []);
+
+  const fetchSuggestions = (query: string) => {
+    if (debounceRef.current) clearTimeout(debounceRef.current);
+    if (query.trim().length < 3) { setSuggestions([]); setOpen(false); return; }
+    debounceRef.current = setTimeout(async () => {
+      try {
+        const url = `https://nominatim.openstreetmap.org/search?q=${encodeURIComponent(query)}&format=json&limit=5&addressdetails=1`;
+        const res = await fetch(url, { headers: { 'Accept-Language': 'en', 'User-Agent': 'ThemeVaultDesigner/1.0' } });
+        const data: any[] = await res.json();
+        const formatted = data.map((item) => {
+          const a = item.address || {};
+          const street = a.house_number && a.road ? `${a.house_number} ${a.road}` : (a.road || '');
+          const city = a.city || a.town || a.village || a.municipality || a.county || '';
+          const state = a.state || '';
+          const postal = a.postcode || '';
+          return [street, city, state, postal].filter(Boolean).join(', ');
+        }).filter(Boolean);
+        setSuggestions(formatted);
+        setOpen(formatted.length > 0);
+      } catch {
+        setSuggestions([]);
+      }
+    }, 400);
+  };
+
+  return (
+    <div ref={containerRef} className="relative">
+      <input
+        value={value}
+        onChange={(e) => { onChange(e.target.value); fetchSuggestions(e.target.value); }}
+        onFocus={() => { if (suggestions.length) setOpen(true); }}
+        placeholder={placeholder}
+        autoComplete="off"
+        aria-required={ariaRequired || undefined}
+        aria-invalid={ariaInvalid || undefined}
+        className={`w-full px-4 py-3 rounded-2xl text-sm font-medium text-slate-900 focus:bg-white focus:ring-4 outline-none ${hasError ? 'bg-red-50 border border-red-300 focus:ring-red-200' : 'bg-slate-50 border border-slate-200 focus:ring-blue-100'}`}
+      />
+      {open && suggestions.length > 0 && (
+        <div className="absolute z-50 left-0 right-0 mt-1 bg-white border border-slate-200 rounded-2xl shadow-lg overflow-hidden">
+          {suggestions.map((suggestion, i) => (
+            <button
+              key={i}
+              type="button"
+              onClick={() => { onChange(suggestion); setSuggestions([]); setOpen(false); }}
+              className="w-full px-4 py-3 text-left text-sm text-slate-800 hover:bg-slate-50 border-b border-slate-100 last:border-0"
+            >
+              {suggestion}
+            </button>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+};
+
 const buildShopifyCartPermalink = ({
   returnUrl,
   variantId,
@@ -852,14 +931,25 @@ const CustomizerScreen = ({ layout, onBack, onComplete, settings, productHandle,
                       </span>
                       {showError && <span className="text-[10px] text-red-500 font-black tracking-[0.3em]">Required</span>}
                     </div>
-                    <input
-                      value={value}
-                      onChange={(e) => updateField(key, e.target.value)}
-                      placeholder={`Enter ${field.label || key}`}
-                      className={`w-full px-4 py-3 rounded-2xl text-sm font-medium text-slate-900 focus:bg-white focus:ring-4 outline-none ${showError ? 'bg-red-50 border border-red-300 focus:ring-red-200' : 'bg-slate-50 border border-slate-200 focus:ring-blue-100'}`}
-                      aria-required={isRequired || undefined}
-                      aria-invalid={showError || undefined}
-                    />
+                    {ADDRESS_FIELD_KEYS.has(key) ? (
+                      <AddressAutocomplete
+                        value={value}
+                        onChange={(val) => updateField(key, val)}
+                        placeholder={field.placeholder || `Enter ${field.label || key}`}
+                        hasError={showError}
+                        ariaRequired={isRequired || undefined}
+                        ariaInvalid={showError || undefined}
+                      />
+                    ) : (
+                      <input
+                        value={value}
+                        onChange={(e) => updateField(key, e.target.value)}
+                        placeholder={field.placeholder || `Enter ${field.label || key}`}
+                        className={`w-full px-4 py-3 rounded-2xl text-sm font-medium text-slate-900 focus:bg-white focus:ring-4 outline-none ${showError ? 'bg-red-50 border border-red-300 focus:ring-red-200' : 'bg-slate-50 border border-slate-200 focus:ring-blue-100'}`}
+                        aria-required={isRequired || undefined}
+                        aria-invalid={showError || undefined}
+                      />
+                    )}
                     {showError && <span className="text-[10px] text-red-500 font-black tracking-[0.3em]">Please complete this field.</span>}
                   </label>
                 );
@@ -887,9 +977,6 @@ const CustomizerScreen = ({ layout, onBack, onComplete, settings, productHandle,
             <p className="text-[11px] text-red-500 font-black uppercase tracking-[0.3em]">Fill all required fields before continuing.</p>
           )}
           <div className="flex flex-wrap gap-2 justify-end">
-            {canReturnToProduct && (
-              <button onClick={() => returnToProductPage()} className="px-4 py-2 rounded-xl border border-slate-200 text-xs font-black uppercase tracking-[0.3em] text-slate-500">Return to product</button>
-            )}
             <button onClick={onBack} className="px-4 py-2 rounded-xl border border-slate-200 text-xs font-black uppercase tracking-[0.3em] text-slate-500">Cancel</button>
             <button onClick={handleFormAdvance} className="px-5 py-2 rounded-xl bg-slate-900 text-white text-xs font-black uppercase tracking-[0.3em]">Preview Proof</button>
           </div>
@@ -929,7 +1016,7 @@ const CustomizerScreen = ({ layout, onBack, onComplete, settings, productHandle,
           <button onClick={onBack} className="px-4 py-2 rounded-xl border border-slate-200 text-xs font-black uppercase tracking-[0.3em] text-slate-500">Cancel</button>
         </div>
       </div>
-      <div className="grid grid-cols-1 lg:grid-cols-[1fr_320px] gap-6">
+      <div className="grid grid-cols-1 gap-6">
         <div className="bg-white border border-slate-200 rounded-[22px] p-5">
           <div className={`bg-slate-900 rounded-[20px] p-6 ${hasBackSide ? 'flex flex-col md:flex-row gap-6 overflow-x-auto' : 'flex justify-center'}`}>
             <div className="shrink-0">
@@ -970,64 +1057,6 @@ const CustomizerScreen = ({ layout, onBack, onComplete, settings, productHandle,
             <button onClick={() => setShowApprovalModal(true)} className="px-4 py-2 rounded-xl bg-emerald-600 text-white text-xs font-black uppercase tracking-[0.3em] flex items-center gap-2">
               <CheckCircle size={14} /> Approve Proof
             </button>
-          </div>
-        </div>
-        <div className="space-y-4">
-          <div className="bg-slate-50 border border-slate-200 rounded-[22px] p-5">
-            <p className="text-xs uppercase tracking-[0.4em] text-slate-400">Summary</p>
-            <ul className="mt-4 space-y-2 text-sm text-slate-600">
-              {formFieldKeys.map((key) => {
-                const value = getFieldValue(key) || '—';
-                return (
-                  <li key={key} className="flex justify-between gap-4">
-                    <span className="font-semibold text-slate-500 uppercase tracking-[0.2em] text-[10px]">{key}</span>
-                    <span className="text-slate-900 font-medium">{value}</span>
-                  </li>
-                );
-              })}
-            </ul>
-            {lockedFieldKeys.length > 0 && (
-              <div className="mt-5 border-t border-slate-200 pt-4">
-                <p className="text-[11px] font-black uppercase tracking-[0.3em] text-slate-400">Preset fields</p>
-                <ul className="mt-2 space-y-2 text-sm text-slate-600">
-                  {lockedFieldKeys.map((key) => (
-                    <li key={key} className="flex justify-between gap-4">
-                      <span className="font-semibold text-slate-500 uppercase tracking-[0.2em] text-[10px]">{getFieldDefinition(key)?.label || key}</span>
-                      <span className="text-slate-900 font-medium">{getFieldValue(key) || getFieldDefinition(key)?.value || '—'}</span>
-                    </li>
-                  ))}
-                </ul>
-              </div>
-            )}
-            <div className="mt-5 border-t border-slate-200 pt-4">
-              <p className="text-[11px] font-black uppercase tracking-[0.3em] text-slate-400">Production specs</p>
-              <p className="mt-1 text-[11px] text-slate-500">{isAdmin ? 'Admins can export a flattened proof PDF plus SVG artwork. SVG fills still render in RGB, so use the embedded CMYK targets below as the production reference.' : 'Proof downloads are flattened JPG files so customers can review the artwork without receiving editable production files.'}</p>
-              <div className="mt-3 space-y-3">
-                {[
-                  { label: 'Front', side: layout.front },
-                  ...(layout.back ? [{ label: 'Back', side: layout.back }] : [])
-                ].map(({ label, side }) => {
-                  const orderedKeys = side.fieldOrder?.length ? side.fieldOrder : Object.keys(side.fields);
-                  return (
-                    <div key={label} className="rounded-2xl border border-slate-200 bg-white p-3">
-                      <p className="text-[10px] font-black uppercase tracking-[0.24em] text-slate-400">{label}</p>
-                      <ul className="mt-2 space-y-2">
-                        {orderedKeys.map((key) => {
-                          const field = side.fields[key];
-                          if (!field) return null;
-                          return (
-                            <li key={`${label}-${key}`} className="flex items-start justify-between gap-3 text-[11px] text-slate-600">
-                              <span className="font-semibold text-slate-700">{field.label || key}</span>
-                              <span className="text-right text-slate-500">{pixelsToPoints(field.fontSize)} pt · {formatCmykLabel(field)}</span>
-                            </li>
-                          );
-                        })}
-                      </ul>
-                    </div>
-                  );
-                })}
-              </div>
-            </div>
           </div>
         </div>
       </div>
@@ -1126,9 +1155,6 @@ const CustomizerScreen = ({ layout, onBack, onComplete, settings, productHandle,
             <button onClick={handleFinalizeRequest} disabled={finalizeDisabled} className="px-6 py-3 rounded-2xl bg-slate-900 text-white text-xs font-black uppercase tracking-[0.3em]">
               {finalizeCtaLabel}
             </button>
-            {canReturnToProduct && (
-              <button onClick={() => returnToProductPage()} className="px-4 py-2 rounded-2xl border border-slate-200 text-xs font-black uppercase tracking-[0.3em] text-slate-500">Return to product</button>
-            )}
             <button onClick={onBack} className="px-4 py-2 rounded-2xl border border-slate-200 text-xs font-black uppercase tracking-[0.3em] text-slate-500">Cancel</button>
           </div>
         </div>
