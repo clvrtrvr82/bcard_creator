@@ -310,12 +310,14 @@ const SelectionScreen = ({ onNext, settings, brandConfigs, activeTags }: { onNex
             onClick={() => onNext(l)} 
             className="group bg-white rounded-[32px] border border-slate-100 overflow-hidden text-left hover:border-blue-500 transition-all hover:shadow-[0_25px_50px_-20px_rgba(15,23,42,0.3)]"
           >
-            <div className="aspect-[3.5/2] bg-slate-50 flex items-center justify-center overflow-hidden border-b border-slate-50">
-              {l.previewImage ? (
-                <img src={l.previewImage} alt={l.name} className="w-full h-full object-cover" />
-              ) : (
-                <BusinessCardPreview data={buildPreviewCardData(l)} scale={convertLegacyDisplayScale(0.65)} side={l.front} settings={settings} fontAssets={l.fontAssets} />
-              )}
+            <div className="aspect-[3.5/2] bg-gradient-to-br from-slate-100 to-slate-50 flex items-center justify-center overflow-hidden border-b border-slate-100 p-4">
+              <div className="rounded-[24px] border border-slate-200 bg-white shadow-[0_20px_40px_-24px_rgba(15,23,42,0.35)] overflow-hidden">
+                {l.previewImage ? (
+                  <img src={l.previewImage} alt={l.name} className="block w-full h-full object-cover" />
+                ) : (
+                  <BusinessCardPreview data={buildPreviewCardData(l)} scale={convertLegacyDisplayScale(0.65)} side={l.front} settings={settings} fontAssets={l.fontAssets} />
+                )}
+              </div>
             </div>
             <div className="p-6 flex justify-between items-center">
               <div>
@@ -999,7 +1001,9 @@ const CustomizerScreen = ({ layout, onBack, onComplete, settings, productHandle,
             </div>
           )}
         </div>
-        <BusinessCardPreview data={data} scale={convertLegacyDisplayScale(1.35)} side={previewSideLayout} settings={settings} fontAssets={layout.fontAssets} />
+        <div className="rounded-[24px] border border-slate-200 bg-slate-50 p-4 overflow-hidden shadow-inner">
+          <BusinessCardPreview data={data} scale={convertLegacyDisplayScale(1.35)} side={previewSideLayout} settings={settings} fontAssets={layout.fontAssets} />
+        </div>
       </div>
     </div>
   );
@@ -1073,11 +1077,6 @@ const CustomizerScreen = ({ layout, onBack, onComplete, settings, productHandle,
     : canUseCartPermalinkFallback
       ? (checkoutStatus === 'loading' ? 'Redirecting…' : 'Add to Shopify Cart')
       : (checkoutStatus === 'loading' ? 'Preparing…' : 'Email Order Request');
-  const quantitySidebarCopy = cartEnabled
-    ? 'A print-ready PDF attaches to your Shopify cart as soon as you approve. Front and back files stay in sync with your selections.'
-    : canUseCartPermalinkFallback
-      ? 'A print-ready PDF reference is attached to the selected Shopify cart item before the buyer returns to your Shopify cart.'
-      : 'Approved proofs are stored on the server so your Theme Vault rep can invoice and send the order to production manually.';
   const showCartDisabledWarning = productOptions.length > 0 && !cartEnabled && !canUseCartPermalinkFallback;
   const quantityStep = (
     <div className="space-y-6">
@@ -1088,7 +1087,7 @@ const CustomizerScreen = ({ layout, onBack, onComplete, settings, productHandle,
         </div>
         <button onClick={() => setStep('proof')} className="px-4 py-2 rounded-xl border border-slate-200 text-xs font-black uppercase tracking-[0.3em] text-slate-500">Back to proof</button>
       </div>
-      <div className="grid grid-cols-1 lg:grid-cols-[1fr_360px] gap-6">
+      <div className="grid grid-cols-1 gap-6">
         <div className="bg-white border border-slate-200 rounded-[22px] p-5 space-y-4">
           {!cartEnabled && !canUseCartPermalinkFallback && (
             <div className="rounded-2xl border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm text-emerald-800">
@@ -1134,9 +1133,6 @@ const CustomizerScreen = ({ layout, onBack, onComplete, settings, productHandle,
               {productSource === 'tags' && 'Variants auto-matched from a Shopify product that shares this layout\'s tags.'}
             </p>
           )}
-          {canReturnToProduct && (
-            <p className="text-xs text-slate-500">When you finish, checkout opens on Shopify with this card’s details attached to the selected variant.</p>
-          )}
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
             {productOptions.map((variant) => (
               <button
@@ -1157,28 +1153,6 @@ const CustomizerScreen = ({ layout, onBack, onComplete, settings, productHandle,
             </button>
             <button onClick={onBack} className="px-4 py-2 rounded-2xl border border-slate-200 text-xs font-black uppercase tracking-[0.3em] text-slate-500">Cancel</button>
           </div>
-        </div>
-        <div className="bg-slate-900 rounded-[22px] p-6 text-white space-y-4">
-          <div className="flex items-center justify-between">
-            <p className="text-xs uppercase tracking-[0.4em] text-white/60">Proof Snapshot</p>
-            {hasBackSide && (
-              <div className="flex gap-2 text-[10px] font-black uppercase tracking-[0.3em]">
-                {(['front', 'back'] as const).map((side) => (
-                  <button
-                    key={`qty-${side}`}
-                    onClick={() => setPreviewSide(side)}
-                    className={`px-3 py-1.5 rounded-xl border ${previewSide === side ? 'bg-white text-slate-900 border-white' : 'bg-transparent border-white/30 text-white/80'}`}
-                  >
-                    {side}
-                  </button>
-                ))}
-              </div>
-            )}
-          </div>
-          <div className="bg-white rounded-[20px] p-4 overflow-hidden">
-            <BusinessCardPreview data={data} scale={convertLegacyDisplayScale(0.95)} side={previewSideLayout} settings={settings} fontAssets={layout.fontAssets} />
-          </div>
-          <p className="text-xs text-white/70 leading-relaxed">{quantitySidebarCopy}</p>
         </div>
       </div>
     </div>

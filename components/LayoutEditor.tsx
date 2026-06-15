@@ -494,7 +494,7 @@ const LayoutEditor: React.FC<LayoutEditorProps> = ({ layout, onChange, settings,
       const metrics = getFieldMetrics(fieldKey, currentField);
       const baseline = axis === 'left' ? targetField.left ?? 0 : targetField.top ?? 0;
       const max = axis === 'left' ? CARD_WIDTH - metrics.width : CARD_HEIGHT - metrics.height;
-      (targetField as any)[axis] = normalizePositionValue(baseline + delta, max);
+      (targetField as any)[axis] = normalizePositionValue(baseline + vdelta, max);
       if (axis === 'left') delete targetField.right;
     });
   };
@@ -1213,14 +1213,15 @@ const LayoutEditor: React.FC<LayoutEditorProps> = ({ layout, onChange, settings,
             {!layout.previewImage && (
               <p className="text-[11px] text-slate-500">Upload a layout overlay image to compare field placement against the final artwork. The overlay only shows in this editor—it never appears in the customer proof.</p>
             )}
-            <div className="rounded-2xl border border-amber-100 bg-amber-50 px-3 py-2.5 text-[11px] text-amber-700">
-              <span className="font-black uppercase tracking-[0.2em]">Spec:</span> 1050 &times; 600 px (300 dpi, 3.5&quot; &times; 2&quot;) &middot; PNG or SVG preferred for crisp lines.
+            <div className="rounded-2xl border border-amber-100 bg-amber-50 px-3 py-2.5 text-[11px] text-amber-700 space-y-1.5">
+              <p><span className="font-black uppercase tracking-[0.2em]">Template spec:</span> 1050 &times; 600 px at 300 dpi for a 3.5&quot; &times; 2&quot; card. SVG is best, PNG is fine, and keep important artwork inside the safe area.</p>
+              <p><span className="font-black uppercase tracking-[0.2em]">Preview spec:</span> Use the same 3.5:2 artwork ratio so the live overlay and customer preview stay aligned with production.</p>
             </div>
             <div className="grid grid-cols-1 gap-4 text-[11px]">
               <label className="flex flex-col gap-2 text-xs font-black uppercase tracking-[0.3em] text-slate-500">
                 <span className="flex items-center gap-2"><ImageIcon size={14} /> Background / Print Artwork</span>
                 <input ref={templateImageInputRef} type="file" accept="image/*,.svg" onChange={(e) => handleBackgroundUpload(e.target.files?.[0])} className="block w-full text-[11px]" />
-                <span className="text-[11px] normal-case tracking-normal text-slate-500">The actual artwork that prints behind all text fields. Supply the same file you send to print (PNG, SVG, or PDF-exported PNG at 300 dpi / 1050&times;600 px).</span>
+                <span className="text-[11px] normal-case tracking-normal text-slate-500">This is the actual print template behind the text fields. Upload SVG or PNG for the live editor; if you only have a PDF, export a matching preview image first so the overlay can render in browser.</span>
               </label>
               {sideLayout.backgroundImage && (
                 <div className="flex flex-wrap items-center justify-between gap-3 rounded-2xl border border-slate-200 bg-slate-50 px-3 py-2.5 text-xs text-slate-600">
@@ -1432,14 +1433,14 @@ const LayoutEditor: React.FC<LayoutEditorProps> = ({ layout, onChange, settings,
           <button type="button" onClick={handleAddTag} className="px-3.5 py-2.5 rounded-xl bg-blue-600 text-white text-[11px] font-black uppercase tracking-[0.3em]">Add Tag</button>
         </div>
         <div className="grid grid-cols-1 gap-4">
-          <label className="text-[11px] font-black uppercase tracking-[0.3em] text-slate-400">Template Notes
+          <label className="text-[11px] font-black uppercase tracking-[0.3em] text-slate-400">Template / Production Notes
             <textarea value={layout.previewUrl || ''} onChange={(e) => commitLayout((draft) => { draft.previewUrl = e.target.value; })} placeholder="Reference URL or production notes" className="mt-2 w-full px-3.5 py-2.5 rounded-xl bg-slate-50 border border-slate-200 text-sm" rows={4} />
           </label>
         </div>
         <div>
           <label className="text-[11px] font-black uppercase tracking-[0.3em] text-slate-400">Field Placement Overlay
             <input ref={previewImageInputRef} type="file" accept="image/*,.svg" onChange={(e) => handlePreviewUpload(e.target.files?.[0])} className="mt-2 block w-full text-[11px]" />
-            <span className="mt-2 block text-[11px] normal-case tracking-normal text-slate-500">Upload your artwork here to use as a semi-transparent overlay while positioning fields. Toggle it on/off with the <strong>Preview On/Off</strong> button in the canvas toolbar. Recommended: 1050 &times; 600 px PNG or SVG.</span>
+            <span className="mt-2 block text-[11px] normal-case tracking-normal text-slate-500">Upload a preview image for field placement. Use the same art direction as the template, but keep the file lightweight so the overlay loads quickly in the editor. Recommended: 1050 &times; 600 px PNG or SVG.</span>
           </label>
           {layout.previewImage && (
             <div className="mt-3 flex flex-wrap items-center justify-between gap-3 rounded-2xl border border-slate-200 bg-slate-50 px-3 py-2.5 text-xs text-slate-600">
