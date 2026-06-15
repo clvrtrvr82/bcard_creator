@@ -497,7 +497,7 @@ const fetchWithTimeout = async (input: RequestInfo | URL, init: RequestInit = {}
 
 const formatCurrency = (price: number) => new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD' }).format(price / 100);
 
-const CustomizerScreen = ({ layout, onBack, onComplete, settings, productHandle, returnUrl, cartEnabled, tagLookupEnabled, isAdmin }: { layout: Layout, onBack: () => void, onComplete: (data: CardData) => void, settings: AppSettings, productHandle: string | null, returnUrl: string | null, cartEnabled: boolean, tagLookupEnabled: boolean, isAdmin: boolean }) => {
+const CustomizerScreen = ({ layout, onBack, onComplete, settings, productHandle, returnUrl, cartEnabled, cartReason, tagLookupEnabled, isAdmin }: { layout: Layout, onBack: () => void, onComplete: (data: CardData) => void, settings: AppSettings, productHandle: string | null, returnUrl: string | null, cartEnabled: boolean, cartReason?: string | null, tagLookupEnabled: boolean, isAdmin: boolean }) => {
   const [step, setStep] = useState<'form' | 'proof' | 'quantity'>('form');
   const [data, setData] = useState<CardData>({ brand: layout.brand, layoutId: layout.id, name: '', jobTitle: '', email: '', phone: '', mobile: '', addressLine1: '', website: '', customValues: {} });
   const totalSteps = cartEnabled ? 3 : 2;
@@ -1102,7 +1102,7 @@ const CustomizerScreen = ({ layout, onBack, onComplete, settings, productHandle,
           {showCartDisabledWarning && (
             <div className="rounded-2xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-800">
               Shopify cart mode is off for this host. {settings.businessEmail ? 'The current setup is still in manual proof mode. ' : ''}
-              {shopifyCapabilities.cartReason || 'Add SHOPIFY_STOREFRONT_TOKEN to the server environment and restart the app to re-enable Add to Cart.'}
+              {cartReason || 'Add SHOPIFY_STOREFRONT_TOKEN to the server environment and restart the app to re-enable Add to Cart.'}
             </div>
           )}
           {!effectiveProductHandle && !tagLookupActive && (
@@ -1402,6 +1402,7 @@ const MainLayout = () => {
                 productHandle={productHandle}
                 returnUrl={returnUrl}
                 cartEnabled={shopifyCapabilities.cartEnabled}
+                cartReason={shopifyCapabilities.cartReason}
                 tagLookupEnabled={shopifyCapabilities.tagLookupEnabled}
                 isAdmin={isAdmin}
               />

@@ -8,33 +8,33 @@ const SERVER_LAYOUTS_ENDPOINT = '/api/layouts';
 const SERVER_LAYOUTS_UNAVAILABLE_KEY = 'theme-vault-layout-api-unavailable';
 
 const hasIndexedDb = typeof indexedDB !== 'undefined';
-const hasSessionStorage = typeof window !== 'undefined' && typeof window.sessionStorage !== 'undefined';
+const hasLocalStorage = typeof window !== 'undefined' && typeof window.localStorage !== 'undefined';
 
 const isServerLayoutsApiUnavailable = () => {
-  if (!hasSessionStorage) return false;
+  if (!hasLocalStorage) return false;
 
   try {
-    return window.sessionStorage.getItem(SERVER_LAYOUTS_UNAVAILABLE_KEY) === '1';
+    return window.localStorage.getItem(SERVER_LAYOUTS_UNAVAILABLE_KEY) === '1';
   } catch {
     return false;
   }
 };
 
 const markServerLayoutsApiUnavailable = () => {
-  if (!hasSessionStorage) return;
+  if (!hasLocalStorage) return;
 
   try {
-    window.sessionStorage.setItem(SERVER_LAYOUTS_UNAVAILABLE_KEY, '1');
+    window.localStorage.setItem(SERVER_LAYOUTS_UNAVAILABLE_KEY, '1');
   } catch {
     // Ignore storage errors and keep runtime behavior resilient.
   }
 };
 
 const clearServerLayoutsApiUnavailable = () => {
-  if (!hasSessionStorage) return;
+  if (!hasLocalStorage) return;
 
   try {
-    window.sessionStorage.removeItem(SERVER_LAYOUTS_UNAVAILABLE_KEY);
+    window.localStorage.removeItem(SERVER_LAYOUTS_UNAVAILABLE_KEY);
   } catch {
     // Ignore storage errors and keep runtime behavior resilient.
   }
