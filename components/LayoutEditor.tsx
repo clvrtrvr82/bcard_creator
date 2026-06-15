@@ -148,7 +148,8 @@ const LayoutEditor: React.FC<LayoutEditorProps> = ({ layout, onChange, settings,
   const canvasRef = useRef<HTMLDivElement>(null);
   const canvasViewportRef = useRef<HTMLDivElement>(null);
   const fieldEditorPreviewRef = useRef<HTMLDivElement>(null);
-  const templateImageInputRef = useRef<HTMLInputElement>(null);
+  const frontTemplateInputRef = useRef<HTMLInputElement>(null);
+  const backTemplateInputRef = useRef<HTMLInputElement>(null);
   const previewImageInputRef = useRef<HTMLInputElement>(null);
   const [fitCanvasScale, setFitCanvasScale] = useState(DEFAULT_CANVAS_SCALE);
   const [fitFieldEditorPreviewScale, setFitFieldEditorPreviewScale] = useState(DEFAULT_CANVAS_SCALE);
@@ -679,33 +680,31 @@ const LayoutEditor: React.FC<LayoutEditorProps> = ({ layout, onChange, settings,
     });
   };
 
-  const handleBackgroundUpload = (file?: File) => {
+  const handleBackgroundUpload = (side: 'front' | 'back', file?: File) => {
     if (!file) return;
+    const inputRef = side === 'back' ? backTemplateInputRef : frontTemplateInputRef;
     const reader = new FileReader();
     reader.onload = () => {
       commitLayout((draft) => {
-        const targetSide = activeSide === 'back' ? draft.back ?? draft.front : draft.front;
+        const targetSide = side === 'back' ? draft.back ?? draft.front : draft.front;
         if (!targetSide) return;
         targetSide.backgroundImage = reader.result as string;
         targetSide.backgroundImageName = file.name;
       });
-      if (templateImageInputRef.current) {
-        templateImageInputRef.current.value = '';
-      }
+      if (inputRef.current) inputRef.current.value = '';
     };
     reader.readAsDataURL(file);
   };
 
-  const handleRemoveBackgroundImage = () => {
+  const handleRemoveBackgroundImage = (side: 'front' | 'back') => {
+    const inputRef = side === 'back' ? backTemplateInputRef : frontTemplateInputRef;
     commitLayout((draft) => {
-      const targetSide = activeSide === 'back' ? draft.back ?? draft.front : draft.front;
+      const targetSide = side === 'back' ? draft.back ?? draft.front : draft.front;
       if (!targetSide) return;
       delete targetSide.backgroundImage;
       delete targetSide.backgroundImageName;
     });
-    if (templateImageInputRef.current) {
-      templateImageInputRef.current.value = '';
-    }
+    if (inputRef.current) inputRef.current.value = '';
   };
 
   const handlePreviewUpload = (file?: File) => {
@@ -1160,7 +1159,7 @@ const LayoutEditor: React.FC<LayoutEditorProps> = ({ layout, onChange, settings,
             <div className="flex flex-wrap items-center justify-between gap-3">
               <div>
                 <p className="text-sm font-black uppercase tracking-[0.25em] text-slate-500">Canvas Controls</p>
-                <p className="text-xs text-slate-500 mt-1">Upload the printable template for this side, then place fields directly over it.</p>
+                <p className="text-xs text-slate-500 mt-1">Zoom, snap, and toggle the placement overlay. Upload templates and previews in the section below.</p>
               </div>
               <span className="rounded-full bg-emerald-50 px-3 py-1 text-[11px] font-bold text-emerald-700">Safe margin {CARD_SAFE_MARGIN}px</span>
             </div>
@@ -1194,43 +1193,6 @@ const LayoutEditor: React.FC<LayoutEditorProps> = ({ layout, onChange, settings,
               >
                 {showPreviewOverlay ? 'Preview On' : 'Preview Off'}
               </button>
-            </div>
-            {layout.previewImage && (
-              <div className="flex flex-wrap items-center gap-3 text-[11px] text-slate-500">
-                <span className="font-black uppercase tracking-[0.25em] text-slate-500">Overlay Opacity</span>
-                <input
-                  type="range"
-                  min={0.1}
-                  max={1}
-                  step={0.05}
-                  value={previewOverlayOpacity}
-                  onChange={(e) => setPreviewOverlayOpacity(Number(e.target.value))}
-                  className="w-full md:w-48"
-                />
-                <span className="font-semibold text-slate-700">{Math.round(previewOverlayOpacity * 100)}%</span>
-              </div>
-            )}
-            {!layout.previewImage && (
-              <p className="text-[11px] text-slate-500">Upload a layout overlay image to compare field placement against the final artwork. The overlay only shows in this editor—it never appears in the customer proof.</p>
-            )}
-            <div className="rounded-2xl border border-amber-100 bg-amber-50 px-3 py-2.5 text-[11px] text-amber-700 space-y-1.5">
-              <p><span className="font-black uppercase tracking-[0.2em]">Template spec:</span> 1050 &times; 600 px at 300 dpi for a 3.5&quot; &times; 2&quot; card. SVG is best, PNG is fine, and keep important artwork inside the safe area.</p>
-              <p><span className="font-black uppercase tracking-[0.2em]">Preview spec:</span> Use the same 3.5:2 artwork ratio so the live overlay and customer preview stay aligned with production.</p>
-            </div>
-            <div className="grid grid-cols-1 gap-4 text-[11px]">
-              <label className="flex flex-col gap-2 text-xs font-black uppercase tracking-[0.3em] text-slate-500">
-                <span className="flex items-center gap-2"><ImageIcon size={14} /> Background / Print Artwork</span>
-                <input ref={templateImageInputRef} type="file" accept="image/*,.svg" onChange={(e) => handleBackgroundUpload(e.target.files?.[0])} className="block w-full text-[11px]" />
-                <span className="text-[11px] normal-case tracking-normal text-slate-500">This is the actual print template behind the text fields. Upload SVG or PNG for the live editor; if you only have a PDF, export a matching preview image first so the overlay can render in browser.</span>
-              </label>
-              {sideLayout.backgroundImage && (
-                <div className="flex flex-wrap items-center justify-between gap-3 rounded-2xl border border-slate-200 bg-slate-50 px-3 py-2.5 text-xs text-slate-600">
-                  <span className="min-w-0 truncate font-semibold text-slate-800">Using: {currentTemplateImageName}</span>
-                  <button type="button" onClick={handleRemoveBackgroundImage} className="shrink-0 rounded-lg border border-red-200 bg-white px-3 py-1.5 text-[11px] font-semibold text-red-600">
-                    Remove
-                  </button>
-                </div>
-              )}
             </div>
           </div>
         </div>
@@ -1437,18 +1399,105 @@ const LayoutEditor: React.FC<LayoutEditorProps> = ({ layout, onChange, settings,
             <textarea value={layout.previewUrl || ''} onChange={(e) => commitLayout((draft) => { draft.previewUrl = e.target.value; })} placeholder="Reference URL or production notes" className="mt-2 w-full px-3.5 py-2.5 rounded-xl bg-slate-50 border border-slate-200 text-sm" rows={4} />
           </label>
         </div>
+      </div>
+
+      {/* ── Templates & Previews ─────────────────────────────────────── */}
+      <div className="bg-white border border-slate-100 rounded-[24px] p-5 space-y-5">
         <div>
-          <label className="text-[11px] font-black uppercase tracking-[0.3em] text-slate-400">Field Placement Overlay
-            <input ref={previewImageInputRef} type="file" accept="image/*,.svg" onChange={(e) => handlePreviewUpload(e.target.files?.[0])} className="mt-2 block w-full text-[11px]" />
-            <span className="mt-2 block text-[11px] normal-case tracking-normal text-slate-500">Upload a preview image for field placement. Use the same art direction as the template, but keep the file lightweight so the overlay loads quickly in the editor. Recommended: 1050 &times; 600 px PNG or SVG.</span>
-          </label>
-          {layout.previewImage && (
-            <div className="mt-3 flex flex-wrap items-center justify-between gap-3 rounded-2xl border border-slate-200 bg-slate-50 px-3 py-2.5 text-xs text-slate-600">
-              <span className="min-w-0 truncate font-semibold text-slate-800">Using: {currentPreviewImageName}</span>
-              <button type="button" onClick={handleRemovePreviewImage} className="shrink-0 rounded-lg border border-red-200 bg-white px-3 py-1.5 text-[11px] font-semibold text-red-600">
-                Remove
-              </button>
+          <p className="text-sm font-black uppercase tracking-[0.25em] text-slate-500">Templates &amp; Previews</p>
+          <p className="text-xs text-slate-500 mt-1">Keep templates and previews separate. Templates print behind your fields; previews are editor-only overlays for positioning.</p>
+        </div>
+
+        <div className="rounded-2xl border border-amber-100 bg-amber-50 px-3 py-2.5 text-[11px] text-amber-700 space-y-1">
+          <p><span className="font-black uppercase tracking-[0.2em]">Template spec:</span> 1050 &times; 600 px at 300 dpi (3.5&quot; &times; 2&quot;). SVG or PNG. Keep artwork inside the safe area.</p>
+          <p><span className="font-black uppercase tracking-[0.2em]">Preview/overlay spec:</span> Same 3.5:2 ratio. Lighter file is fine — it only loads in this editor, never in the customer proof.</p>
+        </div>
+
+        {/* Print templates — one slot per side */}
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+          {/* Front template */}
+          <div className="rounded-2xl border border-slate-200 bg-slate-50 p-4 space-y-3">
+            <div className="flex items-center gap-2">
+              <span className="rounded-full bg-slate-900 px-3 py-1 text-[10px] font-black uppercase tracking-[0.25em] text-white">Front</span>
+              <p className="text-xs font-black uppercase tracking-[0.25em] text-slate-500">Print Template</p>
             </div>
+            <p className="text-[11px] text-slate-500">The artwork printed behind all front-side text fields. Upload the same file you send to the printer.</p>
+            {layout.front.backgroundImage ? (
+              <div className="flex flex-wrap items-center justify-between gap-3 rounded-xl border border-slate-200 bg-white px-3 py-2.5 text-xs">
+                <div className="flex items-center gap-2 min-w-0">
+                  <ImageIcon size={13} className="shrink-0 text-slate-400" />
+                  <span className="truncate font-semibold text-slate-800">{layout.front.backgroundImageName || 'Front template'}</span>
+                </div>
+                <button type="button" onClick={() => handleRemoveBackgroundImage('front')} className="shrink-0 rounded-lg border border-red-200 bg-white px-3 py-1.5 text-[11px] font-semibold text-red-600">Remove</button>
+              </div>
+            ) : (
+              <label className="flex flex-col gap-1.5">
+                <input ref={frontTemplateInputRef} type="file" accept="image/*,.svg" onChange={(e) => handleBackgroundUpload('front', e.target.files?.[0])} className="block w-full text-[11px]" />
+                <span className="text-[11px] text-slate-400">SVG or PNG, 1050 &times; 600 px</span>
+              </label>
+            )}
+          </div>
+
+          {/* Back template */}
+          <div className={`rounded-2xl border p-4 space-y-3 ${layout.back ? 'border-slate-200 bg-slate-50' : 'border-dashed border-slate-200 bg-white opacity-50'}`}>
+            <div className="flex items-center gap-2">
+              <span className="rounded-full bg-slate-500 px-3 py-1 text-[10px] font-black uppercase tracking-[0.25em] text-white">Back</span>
+              <p className="text-xs font-black uppercase tracking-[0.25em] text-slate-500">Print Template</p>
+            </div>
+            {!layout.back ? (
+              <p className="text-[11px] text-slate-400">Add a back side first to upload a back template.</p>
+            ) : (
+              <>
+                <p className="text-[11px] text-slate-500">The artwork printed behind all back-side text fields.</p>
+                {layout.back.backgroundImage ? (
+                  <div className="flex flex-wrap items-center justify-between gap-3 rounded-xl border border-slate-200 bg-white px-3 py-2.5 text-xs">
+                    <div className="flex items-center gap-2 min-w-0">
+                      <ImageIcon size={13} className="shrink-0 text-slate-400" />
+                      <span className="truncate font-semibold text-slate-800">{layout.back.backgroundImageName || 'Back template'}</span>
+                    </div>
+                    <button type="button" onClick={() => handleRemoveBackgroundImage('back')} className="shrink-0 rounded-lg border border-red-200 bg-white px-3 py-1.5 text-[11px] font-semibold text-red-600">Remove</button>
+                  </div>
+                ) : (
+                  <label className="flex flex-col gap-1.5">
+                    <input ref={backTemplateInputRef} type="file" accept="image/*,.svg" onChange={(e) => handleBackgroundUpload('back', e.target.files?.[0])} className="block w-full text-[11px]" />
+                    <span className="text-[11px] text-slate-400">SVG or PNG, 1050 &times; 600 px</span>
+                  </label>
+                )}
+              </>
+            )}
+          </div>
+        </div>
+
+        {/* Editor-only overlay preview — layout level, one image */}
+        <div className="rounded-2xl border border-blue-100 bg-blue-50 p-4 space-y-3">
+          <div className="flex items-start justify-between gap-3">
+            <div>
+              <p className="text-xs font-black uppercase tracking-[0.25em] text-blue-700">Field Placement Overlay <span className="normal-case font-semibold text-blue-500">(editor only)</span></p>
+              <p className="mt-1 text-[11px] text-blue-600">This image is overlaid on the canvas so you can position fields against the real artwork. It never appears in customer previews or proofs. Toggle it on/off with the <strong>Preview On/Off</strong> button in the canvas toolbar.</p>
+            </div>
+          </div>
+          {layout.previewImage ? (
+            <div className="flex flex-wrap items-center justify-between gap-3 rounded-xl border border-blue-200 bg-white px-3 py-2.5 text-xs">
+              <div className="flex items-center gap-2 min-w-0">
+                <ImageIcon size={13} className="shrink-0 text-blue-400" />
+                <span className="truncate font-semibold text-slate-800">{currentPreviewImageName}</span>
+              </div>
+              <div className="flex items-center gap-2">
+                {layout.previewImage && (
+                  <div className="flex items-center gap-2 text-[11px] text-slate-500">
+                    <span className="font-black uppercase tracking-[0.2em]">Opacity</span>
+                    <input type="range" min={0.1} max={1} step={0.05} value={previewOverlayOpacity} onChange={(e) => setPreviewOverlayOpacity(Number(e.target.value))} className="w-24" />
+                    <span className="font-semibold text-slate-700 w-8">{Math.round(previewOverlayOpacity * 100)}%</span>
+                  </div>
+                )}
+                <button type="button" onClick={handleRemovePreviewImage} className="shrink-0 rounded-lg border border-red-200 bg-white px-3 py-1.5 text-[11px] font-semibold text-red-600">Remove</button>
+              </div>
+            </div>
+          ) : (
+            <label className="flex flex-col gap-1.5">
+              <input ref={previewImageInputRef} type="file" accept="image/*,.svg" onChange={(e) => handlePreviewUpload(e.target.files?.[0])} className="block w-full text-[11px]" />
+              <span className="text-[11px] text-blue-600">Recommended: 1050 &times; 600 px PNG or SVG — same art direction as the templates.</span>
+            </label>
           )}
         </div>
       </div>
