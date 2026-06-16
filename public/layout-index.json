@@ -1,24 +1,34 @@
 {
-  "updatedAt": "2026-06-15T17:53:23.932Z",
-  "layoutCount": 2,
+  "updatedAt": "2026-06-16T13:27:39.144Z",
+  "layoutCount": 3,
   "layouts": [
     {
       "id": "hi-modern",
-      "name": "Green Field",
+      "name": "HOLIDAY INN V2",
       "brand": "Holiday Inn",
       "shopifyTags": [
         "holiday-inn-card",
-        "hi-green-field"
+        "holiday-inn-v2"
+      ],
+      "shopifyProductHandle": ""
+    },
+    {
+      "id": "hi-standard",
+      "name": "HOLIDAY INN",
+      "brand": "Holiday Inn",
+      "shopifyTags": [
+        "holiday-inn-card",
+        "holiday-inn"
       ],
       "shopifyProductHandle": ""
     },
     {
       "id": "hie-impact",
-      "name": "Express Impact",
+      "name": "HOLIDAY INN EXPRESS",
       "brand": "Holiday Inn Express",
       "shopifyTags": [
         "holiday-inn-express-card",
-        "hie-impact"
+        "holiday-inn-express"
       ],
       "shopifyProductHandle": ""
     }

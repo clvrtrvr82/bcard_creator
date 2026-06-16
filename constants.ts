@@ -17,8 +17,27 @@ export const BRAND_CONFIGS: Record<string, BrandConfig> = {
       {
         id: 'hi-modern',
         brand: Brand.HOLIDAY_INN,
-        name: 'Green Field',
-        shopifyTags: ['holiday-inn-card', 'hi-green-field'],
+        name: 'HOLIDAY INN V2',
+        shopifyTags: ['holiday-inn-card', 'holiday-inn-v2'],
+        previewUrl: '',
+        front: {
+          backgroundColor: '#ffffff',
+          fields: {
+            name: { label: 'Full Name', top: 50, left: 40, fontSize: 16, color: '#008751', fontWeight: '700', fontFamily: COMMON_FONTS.GEOMETRIC, textAlign: 'left' },
+            jobTitle: { label: 'Job Title', top: 72, left: 40, fontSize: 11, color: '#64748b', fontWeight: '400', fontFamily: COMMON_FONTS.SANS, textAlign: 'left' },
+            email: { label: 'Work Email', top: 110, left: 40, fontSize: 9, color: '#334155', fontWeight: '400', fontFamily: COMMON_FONTS.SANS, textAlign: 'left' },
+            phone: { label: 'Phone', top: 125, left: 40, fontSize: 9, color: '#334155', fontWeight: '400', fontFamily: COMMON_FONTS.SANS, textAlign: 'left', pattern: '###-###-####' },
+            addressLine1: { label: 'Property Address', top: 145, left: 40, fontSize: 9, color: '#334155', fontWeight: '400', fontFamily: COMMON_FONTS.SANS, textAlign: 'left' },
+            website: { label: 'Website', top: 175, left: 40, fontSize: 10, color: '#008751', fontWeight: '700', fontFamily: COMMON_FONTS.SANS, textAlign: 'left' }
+          },
+          fieldOrder: ['name', 'jobTitle', 'email', 'phone', 'addressLine1', 'website']
+        }
+      },
+      {
+        id: 'hi-standard',
+        brand: Brand.HOLIDAY_INN,
+        name: 'HOLIDAY INN',
+        shopifyTags: ['holiday-inn-card', 'holiday-inn'],
         previewUrl: '',
         front: {
           backgroundColor: '#ffffff',
@@ -44,8 +63,8 @@ export const BRAND_CONFIGS: Record<string, BrandConfig> = {
       {
         id: 'hie-impact',
         brand: Brand.HOLIDAY_INN_EXPRESS,
-        name: 'Express Impact',
-        shopifyTags: ['holiday-inn-express-card', 'hie-impact'],
+        name: 'HOLIDAY INN EXPRESS',
+        shopifyTags: ['holiday-inn-express-card', 'holiday-inn-express'],
         previewUrl: '',
         front: {
           backgroundColor: '#003fa7',
