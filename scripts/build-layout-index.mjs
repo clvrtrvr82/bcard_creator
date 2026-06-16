@@ -8,6 +8,7 @@ const tmpDir = path.join(rootDir, '.bcard-cache');
 const bundledFile = path.join(tmpDir, 'brand-configs.mjs');
 const publicDir = path.join(rootDir, 'public');
 const outputFile = path.join(publicDir, 'layout-index.json');
+const storedLayoutsFile = path.join(rootDir, 'data', 'brand-configs.json');
 
 async function ensureTmpBundle() {
   await fs.mkdir(tmpDir, { recursive: true });
@@ -23,20 +24,50 @@ async function ensureTmpBundle() {
   });
 }
 
+async function readStoredBrandConfigs() {
+  try {
+    const raw = await fs.readFile(storedLayoutsFile, 'utf8');
+    const payload = JSON.parse(raw);
+    const configs = payload?.brandConfigs;
+    if (!configs || typeof configs !== 'object' || Array.isArray(configs)) {
+      return null;
+    }
+    return configs;
+  } catch {
+    return null;
+  }
+}
+
+function mapLayouts(configs) {
+  return Object.entries(configs || {}).flatMap(([brandKey, config]) => {
+    const list = Array.isArray(config?.layouts) ? config.layouts : [];
+    return list.map((layout) => ({
+      id: layout?.id,
+      name: layout?.name,
+      brand: layout?.brand ?? brandKey,
+      shopifyTags: Array.isArray(layout?.shopifyTags) ? layout.shopifyTags : [],
+      shopifyProductHandle: layout?.shopifyProductHandle ?? ''
+    })).filter((layout) => layout.id && layout.name);
+  });
+}
+
 async function buildLayoutIndex() {
   await ensureTmpBundle();
   const mod = await import(pathToFileURL(bundledFile));
-  const configs = mod.BRAND_CONFIGS ?? {};
-  const layouts = Object.values(configs).flatMap((config) => {
-    const list = Array.isArray(config?.layouts) ? config.layouts : [];
-    return list.map((layout) => ({
-      id: layout.id,
-      name: layout.name,
-      brand: layout.brand,
-      shopifyTags: layout.shopifyTags ?? [],
-      shopifyProductHandle: layout.shopifyProductHandle ?? ''
-    }));
+  const seedConfigs = mod.BRAND_CONFIGS ?? {};
+  const storedConfigs = await readStoredBrandConfigs();
+  const mergedLayouts = new Map();
+
+  mapLayouts(seedConfigs).forEach((layout) => {
+    mergedLayouts.set(layout.id, layout);
   });
+
+  mapLayouts(storedConfigs).forEach((layout) => {
+    mergedLayouts.set(layout.id, layout);
+  });
+
+  const layouts = Array.from(mergedLayouts.values());
+
   await fs.mkdir(publicDir, { recursive: true });
   const payload = {
     updatedAt: new Date().toISOString(),
