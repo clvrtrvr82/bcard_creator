@@ -1,8 +1,9 @@
 (function () {
   const APP_BASE_URL = 'https://bcard-creator.onrender.com';
   const fallbackLayouts = [
-    { shopifyTags: ['holiday-inn-card', 'hi-green-field'] },
-    { shopifyTags: ['holiday-inn-express-card', 'hie-impact'] }
+    { shopifyTags: ['holiday-inn-card', 'holiday-inn-v2'] },
+    { shopifyTags: ['holiday-inn-card', 'holiday-inn'] },
+    { shopifyTags: ['holiday-inn-express-card', 'holiday-inn-express'] }
   ];
 
   function normalizeTag(tag) {
@@ -81,6 +82,27 @@
       .filter(Boolean);
   }
 
+  function readWindowMetaTags(productHandle) {
+    try {
+      if (typeof window === 'undefined') return [];
+      const metaProduct = window.meta && window.meta.product ? window.meta.product : null;
+      if (!metaProduct) return [];
+
+      const metaHandle = normalizeHandle(metaProduct.handle || '');
+      if (metaHandle && metaHandle !== normalizeHandle(productHandle)) {
+        return [];
+      }
+
+      const tags = Array.isArray(metaProduct.tags)
+        ? metaProduct.tags
+        : String(metaProduct.tags || '').split(',');
+
+      return tags.map(normalizeTag).filter(Boolean);
+    } catch (_error) {
+      return [];
+    }
+  }
+
   async function fetchProductTagsFromUrl(url) {
     const response = await fetch(url, {
       cache: 'no-store',
@@ -104,7 +126,7 @@
 
   async function loadLayouts() {
     try {
-      const response = await fetch(APP_BASE_URL + '/layout-index.json?source=shopify-cta-script', {
+      const response = await fetch(APP_BASE_URL + '/layout-index.json?source=shopify-cta-script&v=' + Date.now(), {
         cache: 'no-store',
         mode: 'cors',
         credentials: 'omit'
@@ -176,7 +198,10 @@
       }
 
       const mountTags = readMountTags(mount);
-      const productTags = mountTags.length ? mountTags : await loadProductTags(productHandle);
+      let productTags = mountTags.length ? mountTags : await loadProductTags(productHandle);
+      if (!productTags.length) {
+        productTags = readWindowMetaTags(productHandle);
+      }
       const matchedLayouts = getMatchedLayouts(layouts, productHandle, productTags);
       if (!matchedLayouts.length) {
         return;
