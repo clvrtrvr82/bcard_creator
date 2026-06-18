@@ -7,7 +7,11 @@
   ];
 
   function normalizeTag(tag) {
-    return String(tag || '').trim().toLowerCase();
+    return String(tag || '')
+      .trim()
+      .toLowerCase()
+      .replace(/[^a-z0-9]+/g, '-')
+      .replace(/^-+|-+$/g, '');
   }
 
   function normalizeHandle(handle) {
@@ -224,8 +228,11 @@
       
       if (!matchedLayouts.length) {
         console.warn('[Designer CTA] No layouts matched product tags. Button will NOT render.');
-        console.warn('[Designer CTA] Layout tags:', layouts.map((l) => l.shopifyTags));
-        console.warn('[Designer CTA] Product tags:', productTags);
+        const flatLayoutTags = layouts
+          .flatMap((layout) => Array.isArray(layout && layout.shopifyTags) ? layout.shopifyTags : [])
+          .map((tag) => normalizeTag(tag));
+        console.warn('[Designer CTA] Layout tags (normalized): ' + flatLayoutTags.join(' | '));
+        console.warn('[Designer CTA] Product tags (normalized): ' + productTags.join(' | '));
         return;
       }
 
