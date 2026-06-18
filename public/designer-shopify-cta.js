@@ -17,7 +17,11 @@
   function getMatchedLayouts(layouts, productTags) {
     return layouts.filter((layout) => {
       const layoutTags = Array.isArray(layout && layout.shopifyTags) ? layout.shopifyTags : [];
-      return layoutTags.some((tag) => productTags.includes(normalizeTag(tag)));
+      const hasMatch = layoutTags.some((tag) => productTags.includes(normalizeTag(tag)));
+      if (hasMatch) {
+        console.log('[Designer CTA] Layout "' + layout.name + '" matched: layout tags [' + layoutTags.join(', ') + '] vs product tags [' + productTags.join(', ') + ']');
+      }
+      return hasMatch;
     });
   }
 
@@ -150,16 +154,20 @@
       urls.push(appProxyUrl);
     }
 
+    console.log('[Designer CTA] Attempting to load product tags from ' + urls.length + ' URL(s):', urls);
     let lastError = null;
 
     try {
       for (const url of urls) {
         try {
+          console.log('[Designer CTA] Fetching tags from: ' + url);
           const tags = await fetchProductTagsFromUrl(url);
           if (tags.length) {
+            console.log('[Designer CTA] Successfully loaded ' + tags.length + ' tag(s) from ' + url + ':', tags);
             return tags;
           }
         } catch (error) {
+          console.warn('[Designer CTA] Failed to load from ' + url + ':', error.message);
           lastError = error;
         }
       }
@@ -171,36 +179,58 @@
       console.error('Designer CTA product tag lookup failed:', lastError);
     }
 
+    console.log('[Designer CTA] No product tags loaded from any URL');
     return [];
   }
 
   async function initDesignerShopifyCTA() {
     const mounts = Array.from(document.querySelectorAll('[data-designer-product-handle]'));
-    if (!mounts.length) return;
+    if (!mounts.length) {
+      console.log('[Designer CTA] No mounts found with data-designer-product-handle attribute');
+      return;
+    }
+    console.log('[Designer CTA] Found ' + mounts.length + ' mount(s)');
 
     const layouts = await loadLayouts();
+    console.log('[Designer CTA] Loaded ' + layouts.length + ' layout(s):', layouts.map((l) => ({ id: l.id, name: l.name, tags: l.shopifyTags })));
 
     await Promise.all(mounts.map(async (mount) => {
       if (mount.getAttribute('data-designer-rendered') === 'true') {
+        console.log('[Designer CTA] Mount already rendered, skipping');
         return;
       }
 
       const productHandle = mount.getAttribute('data-designer-product-handle') || '';
       if (!productHandle) {
+        console.log('[Designer CTA] No product handle on mount');
         return;
       }
+      console.log('[Designer CTA] Processing product handle: ' + productHandle);
 
       const mountTags = readMountTags(mount);
+      console.log('[Designer CTA] Mount tags from data attribute: ', mountTags);
+      
       let productTags = mountTags.length ? mountTags : await loadProductTags(productHandle);
+      console.log('[Designer CTA] Product tags after fetch attempt: ', productTags);
+      
       if (!productTags.length) {
         productTags = readWindowMetaTags(productHandle);
+        console.log('[Designer CTA] Product tags from window.meta: ', productTags);
       }
+      
+      console.log('[Designer CTA] Final product tags array: ', productTags);
       const matchedLayouts = getMatchedLayouts(layouts, productTags);
+      console.log('[Designer CTA] Matched ' + matchedLayouts.length + ' layout(s):', matchedLayouts.map((l) => ({ id: l.id, name: l.name })));
+      
       if (!matchedLayouts.length) {
+        console.warn('[Designer CTA] No layouts matched product tags. Button will NOT render.');
+        console.warn('[Designer CTA] Layout tags:', layouts.map((l) => l.shopifyTags));
+        console.warn('[Designer CTA] Product tags:', productTags);
         return;
       }
 
       renderButton(mount, productHandle, matchedLayouts, productTags);
+      console.log('[Designer CTA] Button rendered successfully');
       mount.setAttribute('data-designer-rendered', 'true');
     }));
   }
