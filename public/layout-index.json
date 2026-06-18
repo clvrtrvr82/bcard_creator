@@ -1,5 +1,5 @@
 {
-  "updatedAt": "2026-06-18T04:03:09.897Z",
+  "updatedAt": "2026-06-18T04:36:31.112Z",
   "layoutCount": 3,
   "layouts": [
     {
@@ -8,7 +8,8 @@
       "brand": "Holiday Inn",
       "shopifyTags": [
         "holiday-inn-card",
-        "holiday-inn-v2"
+        "holiday-inn-v2",
+        "hi-bcard"
       ],
       "shopifyProductHandle": ""
     },
@@ -18,7 +19,8 @@
       "brand": "Holiday Inn",
       "shopifyTags": [
         "holiday-inn-card",
-        "holiday-inn"
+        "holiday-inn",
+        "hi-bcard"
       ],
       "shopifyProductHandle": ""
     },
@@ -28,7 +30,8 @@
       "brand": "Holiday Inn Express",
       "shopifyTags": [
         "holiday-inn-express-card",
-        "holiday-inn-express"
+        "holiday-inn-express",
+        "hi-bcard"
       ],
       "shopifyProductHandle": ""
     }

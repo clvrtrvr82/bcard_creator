@@ -18,7 +18,7 @@ export const BRAND_CONFIGS: Record<string, BrandConfig> = {
         id: 'hi-modern',
         brand: Brand.HOLIDAY_INN,
         name: 'HOLIDAY INN V2',
-        shopifyTags: ['holiday-inn-card', 'holiday-inn-v2'],
+        shopifyTags: ['holiday-inn-card', 'holiday-inn-v2', 'hi-bcard'],
         previewUrl: '',
         front: {
           backgroundColor: '#ffffff',
@@ -37,7 +37,7 @@ export const BRAND_CONFIGS: Record<string, BrandConfig> = {
         id: 'hi-standard',
         brand: Brand.HOLIDAY_INN,
         name: 'HOLIDAY INN',
-        shopifyTags: ['holiday-inn-card', 'holiday-inn'],
+        shopifyTags: ['holiday-inn-card', 'holiday-inn', 'hi-bcard'],
         previewUrl: '',
         front: {
           backgroundColor: '#ffffff',
@@ -64,7 +64,7 @@ export const BRAND_CONFIGS: Record<string, BrandConfig> = {
         id: 'hie-impact',
         brand: Brand.HOLIDAY_INN_EXPRESS,
         name: 'HOLIDAY INN EXPRESS',
-        shopifyTags: ['holiday-inn-express-card', 'holiday-inn-express'],
+        shopifyTags: ['holiday-inn-express-card', 'holiday-inn-express', 'hi-bcard'],
         previewUrl: '',
         front: {
           backgroundColor: '#003fa7',
