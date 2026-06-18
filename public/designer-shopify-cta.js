@@ -14,15 +14,8 @@
     return String(handle || '').trim().toLowerCase();
   }
 
-  function getMatchedLayouts(layouts, productHandle, productTags) {
-    const normalizedHandle = normalizeHandle(productHandle);
-
+  function getMatchedLayouts(layouts, productTags) {
     return layouts.filter((layout) => {
-      const layoutHandle = normalizeHandle(layout && layout.shopifyProductHandle);
-      if (layoutHandle && layoutHandle === normalizedHandle) {
-        return true;
-      }
-
       const layoutTags = Array.isArray(layout && layout.shopifyTags) ? layout.shopifyTags : [];
       return layoutTags.some((tag) => productTags.includes(normalizeTag(tag)));
     });
@@ -80,15 +73,6 @@
       .split(',')
       .map(normalizeTag)
       .filter(Boolean);
-  }
-
-  function readMountLayoutId(mount) {
-    return String(mount.getAttribute('data-designer-layout-id') || '').trim();
-  }
-
-  function readForceShow(mount) {
-    const raw = String(mount.getAttribute('data-designer-force-show') || '').trim().toLowerCase();
-    return raw === 'true' || raw === '1' || raw === 'yes';
   }
 
   function readWindowMetaTags(productHandle) {
@@ -206,27 +190,13 @@
         return;
       }
 
-      const explicitLayoutId = readMountLayoutId(mount);
-      if (explicitLayoutId) {
-        const explicitMatch = layouts.filter((layout) => String(layout && layout.id || '') === explicitLayoutId);
-        if (explicitMatch.length) {
-          renderButton(mount, productHandle, explicitMatch, []);
-          mount.setAttribute('data-designer-rendered', 'true');
-          return;
-        }
-      }
-
       const mountTags = readMountTags(mount);
       let productTags = mountTags.length ? mountTags : await loadProductTags(productHandle);
       if (!productTags.length) {
         productTags = readWindowMetaTags(productHandle);
       }
-      const matchedLayouts = getMatchedLayouts(layouts, productHandle, productTags);
+      const matchedLayouts = getMatchedLayouts(layouts, productTags);
       if (!matchedLayouts.length) {
-        if (readForceShow(mount)) {
-          renderButton(mount, productHandle, layouts.slice(0, 1), productTags);
-          mount.setAttribute('data-designer-rendered', 'true');
-        }
         return;
       }
 
