@@ -82,6 +82,15 @@
       .filter(Boolean);
   }
 
+  function readMountLayoutId(mount) {
+    return String(mount.getAttribute('data-designer-layout-id') || '').trim();
+  }
+
+  function readForceShow(mount) {
+    const raw = String(mount.getAttribute('data-designer-force-show') || '').trim().toLowerCase();
+    return raw === 'true' || raw === '1' || raw === 'yes';
+  }
+
   function readWindowMetaTags(productHandle) {
     try {
       if (typeof window === 'undefined') return [];
@@ -197,6 +206,16 @@
         return;
       }
 
+      const explicitLayoutId = readMountLayoutId(mount);
+      if (explicitLayoutId) {
+        const explicitMatch = layouts.filter((layout) => String(layout && layout.id || '') === explicitLayoutId);
+        if (explicitMatch.length) {
+          renderButton(mount, productHandle, explicitMatch, []);
+          mount.setAttribute('data-designer-rendered', 'true');
+          return;
+        }
+      }
+
       const mountTags = readMountTags(mount);
       let productTags = mountTags.length ? mountTags : await loadProductTags(productHandle);
       if (!productTags.length) {
@@ -204,6 +223,10 @@
       }
       const matchedLayouts = getMatchedLayouts(layouts, productHandle, productTags);
       if (!matchedLayouts.length) {
+        if (readForceShow(mount)) {
+          renderButton(mount, productHandle, layouts.slice(0, 1), productTags);
+          mount.setAttribute('data-designer-rendered', 'true');
+        }
         return;
       }
 
@@ -216,9 +239,35 @@
     init: initDesignerShopifyCTA
   };
 
+  function observeDesignerMounts() {
+    if (typeof MutationObserver === 'undefined' || typeof document === 'undefined') return;
+
+    const observer = new MutationObserver((mutations) => {
+      const hasRelevantAddition = mutations.some((mutation) => {
+        return Array.from(mutation.addedNodes || []).some((node) => {
+          if (!node || node.nodeType !== 1) return false;
+          const element = node;
+          if (element.matches && element.matches('[data-designer-product-handle]')) return true;
+          return Boolean(element.querySelector && element.querySelector('[data-designer-product-handle]'));
+        });
+      });
+
+      if (hasRelevantAddition) {
+        initDesignerShopifyCTA();
+      }
+    });
+
+    observer.observe(document.documentElement || document.body, {
+      childList: true,
+      subtree: true
+    });
+  }
+
   if (document.readyState === 'loading') {
     document.addEventListener('DOMContentLoaded', initDesignerShopifyCTA, { once: true });
   } else {
     initDesignerShopifyCTA();
   }
+
+  observeDesignerMounts();
 })();
