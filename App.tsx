@@ -480,6 +480,7 @@ const buildShopifyCartPermalink = ({
 };
 
 const PRODUCT_REQUEST_TIMEOUT_MS = 12000;
+const DEFAULT_PROOF_BASE_URL = 'https://bcard-creator.onrender.com';
 
 const fetchWithTimeout = async (input: RequestInfo | URL, init: RequestInit = {}, timeoutMs = PRODUCT_REQUEST_TIMEOUT_MS) => {
   const controller = new AbortController();
@@ -548,8 +549,14 @@ const CustomizerScreen = ({ layout, onBack, onComplete, settings, productHandle,
       'Proof Reference': proof.reference || 'manual_review'
     };
 
-    if (proof.proofUrl) {
-      properties['Print-ready PDF URL'] = proof.proofUrl;
+    const resolvedProofUrl = proof.proofUrl
+      || (proof.reference
+        ? `${DEFAULT_PROOF_BASE_URL}/proofs/${proof.reference}`
+        : null);
+
+    if (resolvedProofUrl) {
+      properties['Proof URL'] = resolvedProofUrl;
+      properties['Print-ready PDF URL'] = resolvedProofUrl;
     }
 
     if (effectiveProductHandle) {
