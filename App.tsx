@@ -541,15 +541,15 @@ const CustomizerScreen = ({ layout, onBack, onComplete, settings, productHandle,
     window.location.href = buildReturnUrl(returnUrl, params || {});
   }, [returnUrl]);
 
-  const buildLineItemProperties = useCallback((proofReference: string | null) => {
+  const buildLineItemProperties = useCallback((proof: { reference: string | null; proofUrl: string | null }) => {
     const properties: Record<string, string> = {
       'Layout ID': layout.id,
       'Layout Name': layout.name,
-      'Proof Reference': proofReference || 'manual_review'
+      'Proof Reference': proof.reference || 'manual_review'
     };
 
-    if (proofReference && typeof window !== 'undefined' && window.location?.origin) {
-      properties['Proof URL'] = `${window.location.origin}/proofs/${proofReference}`;
+    if (proof.proofUrl) {
+      properties['Print-ready PDF URL'] = proof.proofUrl;
     }
 
     if (effectiveProductHandle) {
@@ -798,7 +798,7 @@ const CustomizerScreen = ({ layout, onBack, onComplete, settings, productHandle,
     }
   };
 
-  const uploadPrintReadyPdf = async (): Promise<string | null> => {
+  const uploadPrintReadyPdf = async (): Promise<{ reference: string | null; proofUrl: string | null }> => {
     try {
       const canvas = await capturePreview({ watermark: false, scale: 2 });
       const pdf = pdfFromCanvas(canvas, 0.95);
@@ -827,10 +827,13 @@ const CustomizerScreen = ({ layout, onBack, onComplete, settings, productHandle,
       });
       if (!response.ok) throw new Error('Upload failed');
       const payload = await response.json();
-      return payload.reference ?? null;
+      return {
+        reference: payload.reference ?? null,
+        proofUrl: payload.proofUrl ?? null
+      };
     } catch (error) {
       console.warn('Print-ready PDF upload skipped', error);
-      return null;
+      return { reference: null, proofUrl: null };
     }
   };
 
@@ -841,14 +844,14 @@ const CustomizerScreen = ({ layout, onBack, onComplete, settings, productHandle,
     }
     setCheckoutStatus('loading');
     try {
-      const proofReference = await uploadPrintReadyPdf();
+      const proof = await uploadPrintReadyPdf();
       if (cartEnabled) {
         const payload = {
           items: [
             {
               id: selectedVariant?.id,
               quantity: 1,
-              properties: buildLineItemProperties(proofReference)
+              properties: buildLineItemProperties(proof)
             }
           ]
         };
@@ -881,7 +884,7 @@ const CustomizerScreen = ({ layout, onBack, onComplete, settings, productHandle,
           returnUrl,
           variantId: selectedVariant.id,
           quantity: 1,
-          properties: buildLineItemProperties(proofReference)
+          properties: buildLineItemProperties(proof)
         });
         window.location.href = redirectUrl;
         return;
@@ -891,14 +894,14 @@ const CustomizerScreen = ({ layout, onBack, onComplete, settings, productHandle,
           returnToProductPage({
             cardify_status: 'approved',
             cardify_layout: layout.id,
-            cardify_proof: proofReference || 'manual_review',
+            cardify_proof: proof.reference || 'manual_review',
             cardify_variant: String(selectedVariant?.id || '')
           });
           return;
         }
         const contactEmail = settings.businessEmail || 'your print rep';
         const selectionBlurb = selectedVariant ? ` referencing ${selectedVariant.title}` : '';
-        alert(`Proof approved! Share reference ${proofReference || 'manual_review'}${selectionBlurb} with ${contactEmail} to place your order.`);
+        alert(`Proof approved! Share reference ${proof.reference || 'manual_review'}${selectionBlurb} with ${contactEmail} to place your order.`);
       }
     } catch (error) {
       console.error(error);

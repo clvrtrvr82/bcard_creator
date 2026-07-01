@@ -758,6 +758,9 @@ app.post('/api/proofs', (req, res) => {
     const filePath = path.join(proofsDir, reference);
     const buffer = Buffer.from(pdfData, 'base64');
     fs.writeFileSync(filePath, buffer);
+    const forwardedProto = req.headers['x-forwarded-proto'];
+    const protocol = (Array.isArray(forwardedProto) ? forwardedProto[0] : forwardedProto)?.split(',')[0]?.trim() || req.protocol || 'https';
+    const proofUrl = `${protocol}://${req.get('host')}/proofs/${reference}`;
 
     sendProofEmail({
       notificationEmail,
@@ -770,10 +773,10 @@ app.post('/api/proofs', (req, res) => {
       selectedVariant,
       cardData
     }).then((emailResult) => {
-      return res.json({ reference, ...emailResult });
+      return res.json({ reference, proofUrl, ...emailResult });
     }).catch((error) => {
       console.error('Unable to send proof email', error);
-      return res.json({ reference, emailed: false, reason: 'Unable to send proof email.' });
+      return res.json({ reference, proofUrl, emailed: false, reason: 'Unable to send proof email.' });
     });
     return;
   } catch (error) {
