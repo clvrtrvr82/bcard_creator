@@ -60,6 +60,11 @@ if (!fs.existsSync(dataDir)) {
   fs.mkdirSync(dataDir, { recursive: true });
 }
 
+app.use('/proofs', express.static(proofsDir, {
+  index: false,
+  maxAge: 0
+}));
+
 const readJsonFile = (filePath) => {
   if (!fs.existsSync(filePath)) return null;
 

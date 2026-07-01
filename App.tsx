@@ -548,6 +548,10 @@ const CustomizerScreen = ({ layout, onBack, onComplete, settings, productHandle,
       'Proof Reference': proofReference || 'manual_review'
     };
 
+    if (proofReference && typeof window !== 'undefined' && window.location?.origin) {
+      properties['Proof URL'] = `${window.location.origin}/proofs/${proofReference}`;
+    }
+
     if (effectiveProductHandle) {
       properties['Product Handle'] = effectiveProductHandle;
     }
