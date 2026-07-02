@@ -2,7 +2,7 @@ import React, { useState, useEffect, useMemo, useCallback, useRef } from 'react'
 import { HashRouter, Routes, Route, Link, useNavigate } from 'react-router-dom';
 import { CardData, Layout, AppSettings, BrandConfig, ColorPreset, SideLayout, FieldStyle } from './types';
 import { BRAND_CONFIGS } from './constants';
-import { CARD_CANVAS_VERSION, convertLegacyDisplayScale, normalizeFieldStyle } from './cardCanvas';
+import { CARD_CANVAS_VERSION, CARD_HEIGHT, CARD_WIDTH, convertLegacyDisplayScale, normalizeFieldStyle } from './cardCanvas';
 import { loadPersistedLayouts, persistLayouts } from './persistence';
 import BusinessCardPreview from './components/BusinessCardPreview';
 import AdminDashboard from './components/AdminDashboard';
@@ -481,6 +481,8 @@ const buildShopifyCartPermalink = ({
 
 const PRODUCT_REQUEST_TIMEOUT_MS = 12000;
 const DEFAULT_PROOF_BASE_URL = 'https://bcard-creator.onrender.com';
+const PRINT_CARD_WIDTH_IN = 3.5;
+const PRINT_CARD_HEIGHT_IN = 2;
 
 const fetchWithTimeout = async (input: RequestInfo | URL, init: RequestInit = {}, timeoutMs = PRODUCT_REQUEST_TIMEOUT_MS) => {
   const controller = new AbortController();
@@ -748,6 +750,48 @@ const CustomizerScreen = ({ layout, onBack, onComplete, settings, productHandle,
     return pdf;
   };
 
+  const renderSvgToCanvas = async (svgMarkup: string) => {
+    const blob = new Blob([svgMarkup], { type: 'image/svg+xml;charset=utf-8' });
+    const url = URL.createObjectURL(blob);
+
+    try {
+      const image = await new Promise<HTMLImageElement>((resolve, reject) => {
+        const img = new Image();
+        img.onload = () => resolve(img);
+        img.onerror = () => reject(new Error('Unable to render SVG for print-ready PDF.'));
+        img.src = url;
+      });
+
+      const canvas = document.createElement('canvas');
+      canvas.width = CARD_WIDTH;
+      canvas.height = CARD_HEIGHT;
+      const ctx = canvas.getContext('2d');
+      if (!ctx) throw new Error('Unable to create print-ready canvas context.');
+      ctx.drawImage(image, 0, 0, CARD_WIDTH, CARD_HEIGHT);
+      return canvas;
+    } finally {
+      URL.revokeObjectURL(url);
+    }
+  };
+
+  const createPrintReadyPdf = async () => {
+    const sides = [layout.front, ...(layout.back ? [layout.back] : [])];
+    const pdf = new jsPDF({ orientation: 'landscape', unit: 'in', format: [PRINT_CARD_WIDTH_IN, PRINT_CARD_HEIGHT_IN] });
+
+    for (let index = 0; index < sides.length; index += 1) {
+      if (index > 0) {
+        pdf.addPage([PRINT_CARD_WIDTH_IN, PRINT_CARD_HEIGHT_IN], 'landscape');
+      }
+
+      const svg = buildCardSvg({ side: sides[index], data, settings, fontAssets: layout.fontAssets || [] });
+      const canvas = await renderSvgToCanvas(svg);
+      const imageData = canvas.toDataURL('image/png', 1);
+      pdf.addImage(imageData, 'PNG', 0, 0, PRINT_CARD_WIDTH_IN, PRINT_CARD_HEIGHT_IN, undefined, 'FAST');
+    }
+
+    return pdf;
+  };
+
   const downloadCanvasImage = (canvas: HTMLCanvasElement, fileName: string, quality = 0.82) => {
     const anchor = document.createElement('a');
     anchor.href = canvas.toDataURL('image/jpeg', quality);
@@ -807,8 +851,7 @@ const CustomizerScreen = ({ layout, onBack, onComplete, settings, productHandle,
 
   const uploadPrintReadyPdf = async (): Promise<{ reference: string | null; proofUrl: string | null }> => {
     try {
-      const canvas = await capturePreview({ watermark: false, scale: 2 });
-      const pdf = pdfFromCanvas(canvas, 0.95);
+      const pdf = await createPrintReadyPdf();
       const dataUri = pdf.output('datauristring');
       const base64 = dataUri.split(',')[1];
       const response = await fetch('/api/proofs', {
