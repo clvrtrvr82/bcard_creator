@@ -18,7 +18,8 @@
     "react": "^19.0.0",
     "react-dom": "^19.0.0",
     "react-router": "^6.26.2",
-    "react-router-dom": "^6.26.2"
+    "react-router-dom": "^6.26.2",
+    "svg2pdf.js": "^2.7.0"
   },
   "devDependencies": {
     "@types/node": "^22.0.0",

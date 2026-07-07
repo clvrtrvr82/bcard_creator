@@ -8,6 +8,7 @@ import BusinessCardPreview from './components/BusinessCardPreview';
 import AdminDashboard from './components/AdminDashboard';
 import html2canvas from 'html2canvas';
 import jsPDF from 'jspdf';
+import 'svg2pdf.js';
 import { cmykToHex, cmykToRgb, hexToCmyk, hexToRgb, normalizeCmyk, normalizeHex, normalizeRgb, rgbToCmyk } from './utils/color';
 import { pixelsToPoints } from './cardCanvas';
 import { buildCardSvg } from './utils/vectorExport';
@@ -754,28 +755,25 @@ const CustomizerScreen = ({ layout, onBack, onComplete, settings, productHandle,
     return pdf;
   };
 
-  const renderSvgToCanvas = async (svgMarkup: string) => {
-    const blob = new Blob([svgMarkup], { type: 'image/svg+xml;charset=utf-8' });
-    const url = URL.createObjectURL(blob);
+  const renderSvgToPdfPage = async (pdf: jsPDF, svgMarkup: string) => {
+    const parser = new DOMParser();
+    const parsed = parser.parseFromString(svgMarkup, 'image/svg+xml');
+    const svgElement = parsed.documentElement as unknown as SVGElement;
+    const svgRenderer = (pdf as unknown as {
+      svg?: (element: SVGElement, options?: { x?: number; y?: number; width?: number; height?: number; preserveAspectRatio?: string }) => Promise<void>;
+    }).svg;
 
-    try {
-      const image = await new Promise<HTMLImageElement>((resolve, reject) => {
-        const img = new Image();
-        img.onload = () => resolve(img);
-        img.onerror = () => reject(new Error('Unable to render SVG for print-ready PDF.'));
-        img.src = url;
-      });
-
-      const canvas = document.createElement('canvas');
-      canvas.width = CARD_WIDTH;
-      canvas.height = CARD_HEIGHT;
-      const ctx = canvas.getContext('2d');
-      if (!ctx) throw new Error('Unable to create print-ready canvas context.');
-      ctx.drawImage(image, 0, 0, CARD_WIDTH, CARD_HEIGHT);
-      return canvas;
-    } finally {
-      URL.revokeObjectURL(url);
+    if (!svgRenderer) {
+      throw new Error('SVG-to-PDF renderer is unavailable. Ensure svg2pdf.js is loaded.');
     }
+
+    await svgRenderer.call(pdf, svgElement, {
+      x: 0,
+      y: 0,
+      width: PRINT_CARD_WIDTH_IN,
+      height: PRINT_CARD_HEIGHT_IN,
+      preserveAspectRatio: 'none'
+    });
   };
 
   const createPrintReadyPdf = async () => {
@@ -788,9 +786,7 @@ const CustomizerScreen = ({ layout, onBack, onComplete, settings, productHandle,
       }
 
       const svg = buildCardSvg({ side: sides[index], data, settings, fontAssets: layout.fontAssets || [] });
-      const canvas = await renderSvgToCanvas(svg);
-      const imageData = canvas.toDataURL('image/png', 1);
-      pdf.addImage(imageData, 'PNG', 0, 0, PRINT_CARD_WIDTH_IN, PRINT_CARD_HEIGHT_IN, undefined, 'FAST');
+      await renderSvgToPdfPage(pdf, svg);
     }
 
     return pdf;

@@ -132,6 +132,7 @@ export const buildCardSvg = ({ side, data, settings, fontAssets = [] }: BuildCar
   const backgroundColor = cmykToHex(side.cmykBackgroundColor) || side.backgroundColor || '#ffffff';
   const orderedKeys = getOrderedFieldKeys(side);
   const clipDefs: string[] = [];
+  const textClipBleed = 2;
 
   const fieldsMarkup = orderedKeys.map((key, index) => {
     const field = side.fields[key];
@@ -160,7 +161,8 @@ export const buildCardSvg = ({ side, data, settings, fontAssets = [] }: BuildCar
     const clipId = `clip-${index}-${key.replace(/[^a-zA-Z0-9_-]/g, '-')}`;
     const clipWidth = styled.maxWidth ?? styled.width;
     if (clipWidth !== undefined) {
-      clipDefs.push(`<clipPath id="${clipId}"><rect x="${xBase}" y="${styled.top}" width="${clipWidth}" height="${textHeight}" /></clipPath>`);
+      const clipTop = Math.max(0, styled.top - textClipBleed);
+      clipDefs.push(`<clipPath id="${clipId}"><rect x="${xBase}" y="${clipTop}" width="${clipWidth}" height="${textHeight + textClipBleed * 2}" /></clipPath>`);
     }
 
     const textStyle = [
@@ -170,7 +172,7 @@ export const buildCardSvg = ({ side, data, settings, fontAssets = [] }: BuildCar
       `font-style:${styled.fontStyle || 'normal'}`,
       `fill:${textColor || '#000000'}`,
       `text-anchor:${anchor}`,
-      'dominant-baseline:hanging'
+      'dominant-baseline:text-before-edge'
     ];
     if (styled.letterSpacing && styled.letterSpacing !== 'normal') textStyle.push(`letter-spacing:${styled.letterSpacing}`);
     if (styled.textDecoration && styled.textDecoration !== 'none') textStyle.push(`text-decoration:${styled.textDecoration}`);
