@@ -120,9 +120,17 @@ const buildFontFaceCss = (fontAssets: FontAsset[]) => {
   }).join('\n');
 };
 
+const getOrderedFieldKeys = (side: SideLayout) => {
+  const declaredOrder = side.fieldOrder || [];
+  const existingKeys = Object.keys(side.fields || {});
+  const stableDeclared = declaredOrder.filter((key, index) => declaredOrder.indexOf(key) === index && side.fields[key]);
+  const missingKeys = existingKeys.filter((key) => !stableDeclared.includes(key));
+  return [...stableDeclared, ...missingKeys];
+};
+
 export const buildCardSvg = ({ side, data, settings, fontAssets = [] }: BuildCardSvgOptions) => {
   const backgroundColor = cmykToHex(side.cmykBackgroundColor) || side.backgroundColor || '#ffffff';
-  const orderedKeys = side.fieldOrder?.length ? side.fieldOrder : Object.keys(side.fields);
+  const orderedKeys = getOrderedFieldKeys(side);
   const clipDefs: string[] = [];
 
   const fieldsMarkup = orderedKeys.map((key, index) => {

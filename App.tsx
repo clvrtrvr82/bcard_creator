@@ -270,6 +270,10 @@ const buildPreviewCardData = (layout: Layout): CardData => ({
   customValues: {}
 });
 
+const getSelectionPreviewImage = (layout: Layout) => {
+  return layout.front.previewImage || layout.previewImage;
+};
+
 const SelectionScreen = ({ onNext, settings, brandConfigs, activeTags }: { onNext: (l: Layout) => void, settings: AppSettings, brandConfigs: Record<string, BrandConfig>, activeTags: string[] }) => {
   const [search, setSearch] = useState('');
   const allLayouts = useMemo(() => Object.values(brandConfigs).flatMap(bc => bc.layouts), [brandConfigs]);
@@ -312,8 +316,8 @@ const SelectionScreen = ({ onNext, settings, brandConfigs, activeTags }: { onNex
           >
             <div className="aspect-[3.5/2] bg-gradient-to-br from-slate-100 to-slate-50 flex items-center justify-center overflow-hidden border-b border-slate-100 p-4">
               <div className="rounded-[24px] border border-slate-200 bg-white shadow-[0_20px_40px_-24px_rgba(15,23,42,0.35)] overflow-hidden">
-                {l.previewImage ? (
-                  <img src={l.previewImage} alt={l.name} className="block w-full h-full object-cover" />
+                {getSelectionPreviewImage(l) ? (
+                  <img src={getSelectionPreviewImage(l)} alt={l.name} className="block w-full h-full object-cover" />
                 ) : (
                   <BusinessCardPreview data={buildPreviewCardData(l)} scale={convertLegacyDisplayScale(0.65)} side={l.front} settings={settings} fontAssets={l.fontAssets} />
                 )}

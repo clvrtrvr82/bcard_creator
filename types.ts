@@ -86,6 +86,8 @@ export interface SideLayout {
   cmykBackgroundColor?: CMYK;
   backgroundImage?: string;
   backgroundImageName?: string;
+  previewImage?: string;
+  previewImageName?: string;
   templateOverlay?: string;
   fields: Record<string, FieldStyle>;
   fieldOrder: string[];
@@ -97,6 +99,7 @@ export interface Layout {
   canvasVersion?: number;
   name: string;
   previewUrl: string;
+  // Legacy layout-level preview fields. New layouts should use side-level previews.
   previewImage?: string;
   previewImageName?: string;
   templateImage?: string;

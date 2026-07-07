@@ -47,6 +47,14 @@ const evaluateRule = (value: string, rule: ConditionalRule): boolean => {
   }
 };
 
+const getOrderedFieldKeys = (side: SideLayout) => {
+  const declaredOrder = side.fieldOrder || [];
+  const existingKeys = Object.keys(side.fields || {});
+  const stableDeclared = declaredOrder.filter((key, index) => declaredOrder.indexOf(key) === index && side.fields[key]);
+  const missingKeys = existingKeys.filter((key) => !stableDeclared.includes(key));
+  return [...stableDeclared, ...missingKeys];
+};
+
 const BusinessCardPreview = React.forwardRef<HTMLDivElement, BusinessCardPreviewProps>(({ 
   data, 
   side,
@@ -120,7 +128,7 @@ const BusinessCardPreview = React.forwardRef<HTMLDivElement, BusinessCardPreview
       const containerRect = containerRef.current?.getBoundingClientRect();
       if (!containerRect) return;
 
-      const keys = side.fieldOrder?.length ? side.fieldOrder : Object.keys(side.fields);
+      const keys = getOrderedFieldKeys(side);
       const nextBounds = keys.reduce<Record<string, { top: number; left: number; width: number; height: number }>>((acc, key) => {
         const node = fieldRefs.current[key];
         if (!node) return acc;
@@ -350,7 +358,7 @@ const BusinessCardPreview = React.forwardRef<HTMLDivElement, BusinessCardPreview
           />
         )}
         
-        {side.fieldOrder?.map(key => renderDynamicField(key)) || Object.keys(side.fields).map(key => renderDynamicField(key))}
+        {getOrderedFieldKeys(side).map((key) => renderDynamicField(key))}
       </div>
     </div>
   );

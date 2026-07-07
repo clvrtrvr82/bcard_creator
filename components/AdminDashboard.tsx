@@ -59,6 +59,56 @@ const mergeSettings = (current: AppSettings, incoming?: Partial<AppSettings>): A
   ...(incoming || {})
 });
 
+const hasRequiredSideMedia = (layout: Layout) => {
+  const frontHasTemplate = Boolean(layout.front.backgroundImage);
+  const frontHasPreview = Boolean(layout.front.previewImage || layout.previewImage);
+  if (!frontHasTemplate || !frontHasPreview) {
+    return {
+      valid: false,
+      reason: 'Front side requires both a print template and a preview image before saving.'
+    };
+  }
+
+  if (layout.back) {
+    const backHasTemplate = Boolean(layout.back.backgroundImage);
+    const backHasPreview = Boolean(layout.back.previewImage);
+    if (!backHasTemplate || !backHasPreview) {
+      return {
+        valid: false,
+        reason: 'Back side is enabled, so it also requires both a print template and a preview image before saving.'
+      };
+    }
+  }
+
+  return { valid: true, reason: '' };
+};
+
+const normalizeSide = (side: Layout['front']) => {
+  const existingKeys = Object.keys(side.fields || {});
+  const declaredOrder = side.fieldOrder || [];
+  const stableDeclared = declaredOrder.filter((key, index) => declaredOrder.indexOf(key) === index && side.fields[key]);
+  const missing = existingKeys.filter((key) => !stableDeclared.includes(key));
+  return {
+    ...side,
+    fieldOrder: [...stableDeclared, ...missing]
+  };
+};
+
+const normalizeLayoutForSave = (layout: Layout): Layout => {
+  const frontPreviewImage = layout.front.previewImage || layout.previewImage;
+  const frontPreviewImageName = layout.front.previewImageName || layout.previewImageName;
+
+  return {
+    ...layout,
+    front: {
+      ...normalizeSide(layout.front),
+      previewImage: frontPreviewImage,
+      previewImageName: frontPreviewImageName
+    },
+    back: layout.back ? normalizeSide(layout.back) : undefined
+  };
+};
+
 const AdminDashboard: React.FC<AdminDashboardProps> = ({ brandConfigs, onBrandConfigsChange, settings, onSettingsChange }) => {
   const [activeTab, setActiveTab] = useState<'overview' | 'layouts' | 'assets' | 'settings'>('overview');
   const [search, setSearch] = useState('');
@@ -156,16 +206,22 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({ brandConfigs, onBrandCo
       pushError('Add a layout title before saving.');
       return;
     }
+    const normalizedLayout = normalizeLayoutForSave(workingLayout);
+    const mediaValidation = hasRequiredSideMedia(normalizedLayout);
+    if (!mediaValidation.valid) {
+      pushError(mediaValidation.reason);
+      return;
+    }
     const brand = workingLayout.brand?.toString() || getDefaultBrandKey();
     const clone = cloneConfigs(brandConfigs);
     Object.keys(clone).forEach((brandKey) => {
       clone[brandKey].layouts = clone[brandKey].layouts.filter((layout) => layout.id !== workingLayout.id);
     });
     ensureBrandBucket(clone, brand);
-    clone[brand].layouts = [...clone[brand].layouts, cloneLayout({ ...workingLayout, name: trimmedName })];
+    clone[brand].layouts = [...clone[brand].layouts, cloneLayout({ ...normalizedLayout, name: trimmedName })];
     onBrandConfigsChange(clone);
     setSelectedLayoutId(workingLayout.id);
-    setWorkingLayout((current) => (current ? { ...current, name: trimmedName } : current));
+    setWorkingLayout((current) => (current ? { ...normalizedLayout, name: trimmedName } : current));
     pushMessage('Layout saved.');
   };
 
