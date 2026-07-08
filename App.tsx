@@ -8,7 +8,6 @@ import BusinessCardPreview from './components/BusinessCardPreview';
 import AdminDashboard from './components/AdminDashboard';
 import html2canvas from 'html2canvas';
 import jsPDF from 'jspdf';
-import 'svg2pdf.js';
 import { cmykToHex, cmykToRgb, hexToCmyk, hexToRgb, normalizeCmyk, normalizeHex, normalizeRgb, rgbToCmyk } from './utils/color';
 import { pixelsToPoints } from './cardCanvas';
 import { buildCardSvg } from './utils/vectorExport';
@@ -488,6 +487,74 @@ const PRODUCT_REQUEST_TIMEOUT_MS = 12000;
 const DEFAULT_PROOF_BASE_URL = 'https://bcard-creator.onrender.com';
 const PRINT_CARD_WIDTH_IN = 3.5;
 const PRINT_CARD_HEIGHT_IN = 2;
+const SIDE_VALUE_PREFIX = '__side__';
+
+type CardSide = 'front' | 'back';
+
+interface SideFieldRef {
+  id: string;
+  side: CardSide;
+  key: string;
+}
+
+const SIDE_AWARE_NATIVE_KEYS = new Set(['name', 'jobTitle', 'email', 'phone', 'mobile', 'addressLine1', 'website']);
+
+const toSideValueKey = (side: CardSide, key: string) => `${SIDE_VALUE_PREFIX}${side}:${key}`;
+
+const getPrimaryPrintSwatch = (layout: Layout, side: SideLayout) => {
+  return normalizeCmyk(
+    layout.colorPresets?.[0]?.cmyk
+      || side.cmykBackgroundColor
+      || hexToCmyk(side.backgroundColor)
+      || { c: 0, m: 0, y: 0, k: 0 }
+  );
+};
+
+const normalizeSideForPrint = (layout: Layout, side: SideLayout): SideLayout => {
+  const swatch = getPrimaryPrintSwatch(layout, side);
+  const normalizedFields = Object.entries(side.fields || {}).reduce<Record<string, FieldStyle>>((acc, [key, field]) => {
+    const fieldCmyk = normalizeCmyk(field.cmyk || hexToCmyk(field.color) || swatch);
+    acc[key] = {
+      ...field,
+      cmyk: fieldCmyk,
+      color: cmykToHex(fieldCmyk) || field.color
+    };
+    return acc;
+  }, {});
+
+  return {
+    ...side,
+    cmykBackgroundColor: swatch,
+    backgroundColor: cmykToHex(swatch) || side.backgroundColor,
+    fields: normalizedFields
+  };
+};
+
+const svgToPngDataUrl = async (svgMarkup: string, widthPx = CARD_WIDTH, heightPx = CARD_HEIGHT): Promise<string> => {
+  const svgBlob = new Blob([svgMarkup], { type: 'image/svg+xml;charset=utf-8' });
+  const blobUrl = URL.createObjectURL(svgBlob);
+
+  try {
+    const image = await new Promise<HTMLImageElement>((resolve, reject) => {
+      const img = new Image();
+      img.crossOrigin = 'anonymous';
+      img.onload = () => resolve(img);
+      img.onerror = () => reject(new Error('Unable to render SVG artwork for print output.'));
+      img.src = blobUrl;
+    });
+
+    const canvas = document.createElement('canvas');
+    canvas.width = widthPx;
+    canvas.height = heightPx;
+    const ctx = canvas.getContext('2d');
+    if (!ctx) throw new Error('Canvas 2D context unavailable.');
+    ctx.clearRect(0, 0, widthPx, heightPx);
+    ctx.drawImage(image, 0, 0, widthPx, heightPx);
+    return canvas.toDataURL('image/png');
+  } finally {
+    URL.revokeObjectURL(blobUrl);
+  }
+};
 
 const fetchWithTimeout = async (input: RequestInfo | URL, init: RequestInit = {}, timeoutMs = PRODUCT_REQUEST_TIMEOUT_MS) => {
   const controller = new AbortController();
@@ -528,21 +595,79 @@ const CustomizerScreen = ({ layout, onBack, onComplete, settings, productHandle,
   const baseProductHandle = useMemo(() => productHandle || layout.shopifyProductHandle || null, [productHandle, layout.shopifyProductHandle]);
   const tagLookupActive = tagLookupEnabled && Boolean(layout.shopifyTags?.length);
   const effectiveProductHandle = baseProductHandle || derivedProductHandle;
-  const allFieldKeys = useMemo(() => Array.from(new Set([...(layout.front?.fieldOrder || []), ...(layout.back?.fieldOrder || [])])), [layout.id]);
-  const getFieldDefinition = useCallback((key: string) => layout.front?.fields?.[key] || layout.back?.fields?.[key], [layout]);
-  const formFieldKeys = useMemo(() => allFieldKeys.filter((key) => getFieldDefinition(key)?.showInForm !== false), [allFieldKeys, getFieldDefinition]);
-  const lockedFieldKeys = useMemo(() => allFieldKeys.filter((key) => getFieldDefinition(key)?.showInForm === false), [allFieldKeys, getFieldDefinition]);
+  const allFieldRefs = useMemo<SideFieldRef[]>(() => {
+    const refs: SideFieldRef[] = [];
+    const pushSideRefs = (side: CardSide, sideLayout?: SideLayout) => {
+      if (!sideLayout) return;
+      const orderedKeys = sideLayout.fieldOrder?.length ? sideLayout.fieldOrder : Object.keys(sideLayout.fields || {});
+      orderedKeys.forEach((key) => {
+        if (!sideLayout.fields?.[key]) return;
+        refs.push({ id: `${side}:${key}`, side, key });
+      });
+    };
+
+    pushSideRefs('front', layout.front);
+    pushSideRefs('back', layout.back);
+    return refs;
+  }, [layout.front, layout.back]);
+  const getFieldDefinition = useCallback((fieldRef: SideFieldRef) => {
+    const sideLayout = fieldRef.side === 'back' ? layout.back : layout.front;
+    return sideLayout?.fields?.[fieldRef.key] || null;
+  }, [layout.back, layout.front]);
+  const formFieldRefs = useMemo(() => allFieldRefs.filter((fieldRef) => getFieldDefinition(fieldRef)?.showInForm !== false), [allFieldRefs, getFieldDefinition]);
+  const lockedFieldRefs = useMemo(() => allFieldRefs.filter((fieldRef) => getFieldDefinition(fieldRef)?.showInForm === false), [allFieldRefs, getFieldDefinition]);
   const hasBackSide = Boolean(layout.back);
   const previewSideLayout = previewSide === 'front' ? layout.front : layout.back || layout.front;
   const canReturnToProduct = Boolean(returnUrl);
-  const getFieldValue = useCallback((key: string, sourceData: CardData = data) => {
+  const getFieldValue = useCallback((fieldRef: SideFieldRef, sourceData: CardData = data) => {
+    const { side, key } = fieldRef;
+    const namespacedValue = sourceData.customValues?.[toSideValueKey(side, key)];
+
+    if (side === 'back') {
+      if (namespacedValue !== undefined && namespacedValue !== null) return String(namespacedValue);
+      const fallbackLegacyBackValue = sourceData.customValues?.[key];
+      if (fallbackLegacyBackValue !== undefined && fallbackLegacyBackValue !== null) return String(fallbackLegacyBackValue);
+      return '';
+    }
+
     if (Object.prototype.hasOwnProperty.call(sourceData, key)) {
       const raw = (sourceData as any)[key];
       if (raw === undefined || raw === null) return '';
       return typeof raw === 'string' ? raw : String(raw);
     }
+
+    if (namespacedValue !== undefined && namespacedValue !== null) return String(namespacedValue);
     return sourceData.customValues?.[key] || '';
   }, [data]);
+
+  const getRenderDataForSide = useCallback((side: CardSide, sourceData: CardData = data): CardData => {
+    if (side === 'front') return sourceData;
+
+    const sideLayout = layout.back || layout.front;
+    if (!sideLayout) return sourceData;
+
+    const nextData: CardData = {
+      ...sourceData,
+      customValues: { ...(sourceData.customValues || {}) }
+    };
+
+    const sideKeys = sideLayout.fieldOrder?.length ? sideLayout.fieldOrder : Object.keys(sideLayout.fields || {});
+    sideKeys.forEach((key) => {
+      const sideValue = sourceData.customValues?.[toSideValueKey(side, key)];
+      if (sideValue === undefined || sideValue === null || sideValue === '') return;
+
+      if (SIDE_AWARE_NATIVE_KEYS.has(key)) {
+        (nextData as any)[key] = String(sideValue);
+      } else {
+        nextData.customValues = {
+          ...(nextData.customValues || {}),
+          [key]: String(sideValue)
+        };
+      }
+    });
+
+    return nextData;
+  }, [data, layout.back, layout.front]);
 
   const returnToProductPage = useCallback((params?: Record<string, string | null | undefined>) => {
     if (!returnUrl) return;
@@ -574,17 +699,18 @@ const CustomizerScreen = ({ layout, onBack, onComplete, settings, productHandle,
       properties['Shopify Product URL'] = returnUrl;
     }
 
-    allFieldKeys.forEach((key) => {
-      const field = getFieldDefinition(key);
-      const value = (getFieldValue(key) || field?.value || '').trim();
+    allFieldRefs.forEach((fieldRef) => {
+      const field = getFieldDefinition(fieldRef);
+      const value = (getFieldValue(fieldRef) || field?.value || '').trim();
       if (!value) return;
-      const label = (field?.label || key).trim();
+      const baseLabel = (field?.label || fieldRef.key).trim();
+      const label = fieldRef.side === 'back' ? `Back ${baseLabel}` : baseLabel;
       if (properties[label]) return;
       properties[label] = value;
     });
 
     return properties;
-  }, [allFieldKeys, effectiveProductHandle, getFieldDefinition, getFieldValue, layout.id, layout.name, returnUrl]);
+  }, [allFieldRefs, effectiveProductHandle, getFieldDefinition, getFieldValue, layout.id, layout.name, returnUrl]);
 
   const primeProductOptions = useCallback((variants: ProductVariantOption[]) => {
     setProductOptions(variants);
@@ -681,38 +807,57 @@ const CustomizerScreen = ({ layout, onBack, onComplete, settings, productHandle,
     setPreviewSide('front');
   }, [layout.id]);
 
-  const updateField = (key: string, value: string) => {
+  const updateField = (fieldRef: SideFieldRef, value: string) => {
     setFieldErrors((prev) => {
-      if (!prev[key]) return prev;
+      if (!prev[fieldRef.id]) return prev;
       if (!value.trim()) return prev;
       const next = { ...prev };
-      delete next[key];
+      delete next[fieldRef.id];
       return next;
     });
     setData((prev) => {
-      if (key === 'addressLine1') {
+      const sideValueKey = toSideValueKey(fieldRef.side, fieldRef.key);
+
+      if (fieldRef.side === 'back') {
+        return {
+          ...prev,
+          customValues: {
+            ...(prev.customValues || {}),
+            [sideValueKey]: value
+          }
+        };
+      }
+
+      if (fieldRef.key === 'addressLine1') {
         return { ...prev, addressLine1: value };
       }
-      if (key in prev) {
-        return { ...prev, [key]: value } as CardData;
+      if (fieldRef.key in prev) {
+        return { ...prev, [fieldRef.key]: value } as CardData;
       }
-      return { ...prev, customValues: { ...(prev.customValues || {}), [key]: value } };
+      return {
+        ...prev,
+        customValues: {
+          ...(prev.customValues || {}),
+          [fieldRef.key]: value,
+          [sideValueKey]: value
+        }
+      };
     });
   };
 
   const handleFormAdvance = useCallback(() => {
-    if (!formFieldKeys.length) {
+    if (!formFieldRefs.length) {
       setFieldErrors({});
       setStep('proof');
       return;
     }
     const missing: Record<string, boolean> = {};
-    formFieldKeys.forEach((key) => {
-      const field = getFieldDefinition(key);
+    formFieldRefs.forEach((fieldRef) => {
+      const field = getFieldDefinition(fieldRef);
       if (!field?.required) return;
-      const currentValue = getFieldValue(key).trim();
+      const currentValue = getFieldValue(fieldRef).trim();
       if (!currentValue) {
-        missing[key] = true;
+        missing[fieldRef.id] = true;
       }
     });
     if (Object.keys(missing).length) {
@@ -721,7 +866,7 @@ const CustomizerScreen = ({ layout, onBack, onComplete, settings, productHandle,
     }
     setFieldErrors({});
     setStep('proof');
-  }, [formFieldKeys, getFieldDefinition, getFieldValue]);
+  }, [formFieldRefs, getFieldDefinition, getFieldValue]);
 
   const capturePreview = async (options?: { watermark?: boolean; scale?: number }) => {
     if (!proofRef.current) throw new Error('Preview unavailable');
@@ -755,38 +900,29 @@ const CustomizerScreen = ({ layout, onBack, onComplete, settings, productHandle,
     return pdf;
   };
 
-  const renderSvgToPdfPage = async (pdf: jsPDF, svgMarkup: string) => {
-    const parser = new DOMParser();
-    const parsed = parser.parseFromString(svgMarkup, 'image/svg+xml');
-    const svgElement = parsed.documentElement as unknown as SVGElement;
-    const svgRenderer = (pdf as unknown as {
-      svg?: (element: SVGElement, options?: { x?: number; y?: number; width?: number; height?: number; preserveAspectRatio?: string }) => Promise<void>;
-    }).svg;
-
-    if (!svgRenderer) {
-      throw new Error('SVG-to-PDF renderer is unavailable. Ensure svg2pdf.js is loaded.');
-    }
-
-    await svgRenderer.call(pdf, svgElement, {
-      x: 0,
-      y: 0,
-      width: PRINT_CARD_WIDTH_IN,
-      height: PRINT_CARD_HEIGHT_IN,
-      preserveAspectRatio: 'none'
-    });
-  };
-
   const createPrintReadyPdf = async () => {
-    const sides = [layout.front, ...(layout.back ? [layout.back] : [])];
-    const pdf = new jsPDF({ orientation: 'landscape', unit: 'in', format: [PRINT_CARD_WIDTH_IN, PRINT_CARD_HEIGHT_IN] });
+    const sides: Array<{ sideName: CardSide; sideLayout: SideLayout }> = [
+      { sideName: 'front', sideLayout: layout.front },
+      ...(layout.back ? [{ sideName: 'back' as const, sideLayout: layout.back }] : [])
+    ];
+    const pdf = new jsPDF({ orientation: 'landscape', unit: 'in', format: [PRINT_CARD_WIDTH_IN, PRINT_CARD_HEIGHT_IN], compress: true });
+
+    pdf.setProperties({
+      title: `${layout.name} Print Ready`,
+      subject: 'Print-ready PDF generated from CMYK-normalized artwork',
+      creator: 'Theme Vault Designer'
+    });
 
     for (let index = 0; index < sides.length; index += 1) {
       if (index > 0) {
         pdf.addPage([PRINT_CARD_WIDTH_IN, PRINT_CARD_HEIGHT_IN], 'landscape');
       }
 
-      const svg = buildCardSvg({ side: sides[index], data, settings, fontAssets: layout.fontAssets || [] });
-      await renderSvgToPdfPage(pdf, svg);
+      const sideForPrint = normalizeSideForPrint(layout, sides[index].sideLayout);
+      const sideData = getRenderDataForSide(sides[index].sideName, data);
+      const svg = buildCardSvg({ side: sideForPrint, data: sideData, settings, fontAssets: layout.fontAssets || [] });
+      const pngDataUrl = await svgToPngDataUrl(svg, CARD_WIDTH, CARD_HEIGHT);
+      pdf.addImage(pngDataUrl, 'PNG', 0, 0, PRINT_CARD_WIDTH_IN, PRINT_CARD_HEIGHT_IN, undefined, 'FAST');
     }
 
     return pdf;
@@ -834,11 +970,12 @@ const CustomizerScreen = ({ layout, onBack, onComplete, settings, productHandle,
     setProofStatus('generating');
     try {
       const exports = [
-        { suffix: 'front', side: layout.front },
-        ...(layout.back ? [{ suffix: 'back', side: layout.back }] : [])
+        { suffix: 'front', sideName: 'front' as const, side: layout.front },
+        ...(layout.back ? [{ suffix: 'back', sideName: 'back' as const, side: layout.back }] : [])
       ];
-      exports.forEach(({ suffix, side }) => {
-        const svg = buildCardSvg({ side, data, settings, fontAssets: layout.fontAssets || [] });
+      exports.forEach(({ suffix, sideName, side }) => {
+        const sideData = getRenderDataForSide(sideName, data);
+        const svg = buildCardSvg({ side, data: sideData, settings, fontAssets: layout.fontAssets || [] });
         downloadTextFile(`${proofBaseName}-${suffix}.svg`, svg, 'image/svg+xml;charset=utf-8');
       });
     } catch (error) {
@@ -973,28 +1110,29 @@ const CustomizerScreen = ({ layout, onBack, onComplete, settings, productHandle,
             <p className="text-xs uppercase tracking-[0.4em] text-slate-400">Step {getStepPosition('form')} of {totalSteps}</p>
             <h2 className="text-2xl font-black text-slate-900 mt-1">Enter card details</h2>
           </div>
-          {formFieldKeys.length ? (
+          {formFieldRefs.length ? (
             <div className="space-y-3">
-              {formFieldKeys.map((key) => {
-                const field = getFieldDefinition(key);
+              {formFieldRefs.map((fieldRef) => {
+                const field = getFieldDefinition(fieldRef);
                 if (!field) return null;
-                const value = getFieldValue(key);
+                const value = getFieldValue(fieldRef);
                 const isRequired = Boolean(field.required);
-                const showError = Boolean(fieldErrors[key]);
+                const showError = Boolean(fieldErrors[fieldRef.id]);
+                const sideTag = fieldRef.side === 'back' ? 'Back' : 'Front';
                 return (
-                  <label key={key} className="text-xs font-semibold text-slate-500 uppercase tracking-[0.25em] space-y-2">
+                  <label key={fieldRef.id} className="text-xs font-semibold text-slate-500 uppercase tracking-[0.25em] space-y-2">
                     <div className="flex items-center justify-between gap-3">
                       <span>
-                        {field.label || key}
+                        [{sideTag}] {field.label || fieldRef.key}
                         {isRequired && <span className="text-red-500 ml-2">*</span>}
                       </span>
                       {showError && <span className="text-[10px] text-red-500 font-black tracking-[0.3em]">Required</span>}
                     </div>
-                    {ADDRESS_FIELD_KEYS.has(key) ? (
+                    {ADDRESS_FIELD_KEYS.has(fieldRef.key) ? (
                       <AddressAutocomplete
                         value={value}
-                        onChange={(val) => updateField(key, val)}
-                        placeholder={field.placeholder || `Enter ${field.label || key}`}
+                        onChange={(val) => updateField(fieldRef, val)}
+                        placeholder={field.placeholder || `Enter ${field.label || fieldRef.key}`}
                         hasError={showError}
                         ariaRequired={isRequired || undefined}
                         ariaInvalid={showError || undefined}
@@ -1002,8 +1140,8 @@ const CustomizerScreen = ({ layout, onBack, onComplete, settings, productHandle,
                     ) : (
                       <input
                         value={value}
-                        onChange={(e) => updateField(key, e.target.value)}
-                        placeholder={field.placeholder || `Enter ${field.label || key}`}
+                        onChange={(e) => updateField(fieldRef, e.target.value)}
+                        placeholder={field.placeholder || `Enter ${field.label || fieldRef.key}`}
                         className={`w-full px-4 py-3 rounded-2xl text-sm font-medium text-slate-900 focus:bg-white focus:ring-4 outline-none ${showError ? 'bg-red-50 border border-red-300 focus:ring-red-200' : 'bg-slate-50 border border-slate-200 focus:ring-blue-100'}`}
                         aria-required={isRequired || undefined}
                         aria-invalid={showError || undefined}
@@ -1019,14 +1157,14 @@ const CustomizerScreen = ({ layout, onBack, onComplete, settings, productHandle,
               All visible fields are pre-filled for this layout. Continue to preview the proof.
             </div>
           )}
-          {lockedFieldKeys.length > 0 && (
+          {lockedFieldRefs.length > 0 && (
             <div className="rounded-2xl bg-slate-50 border border-slate-100 p-3 space-y-2">
               <p className="text-[11px] font-black uppercase tracking-[0.3em] text-slate-500">Preset details</p>
               <ul className="space-y-1 text-[11px] text-slate-600">
-                {lockedFieldKeys.map((key) => (
-                  <li key={key} className="flex justify-between gap-3">
-                    <span className="font-semibold text-slate-400">{getFieldDefinition(key)?.label || key}</span>
-                    <span className="text-slate-800">{getFieldValue(key) || getFieldDefinition(key)?.value || '—'}</span>
+                {lockedFieldRefs.map((fieldRef) => (
+                  <li key={fieldRef.id} className="flex justify-between gap-3">
+                    <span className="font-semibold text-slate-400">[{fieldRef.side === 'back' ? 'Back' : 'Front'}] {getFieldDefinition(fieldRef)?.label || fieldRef.key}</span>
+                    <span className="text-slate-800">{getFieldValue(fieldRef) || getFieldDefinition(fieldRef)?.value || '—'}</span>
                   </li>
                 ))}
               </ul>
@@ -1059,7 +1197,7 @@ const CustomizerScreen = ({ layout, onBack, onComplete, settings, productHandle,
           )}
         </div>
         <div className="rounded-[24px] border border-slate-200 bg-slate-50 p-4 overflow-hidden shadow-inner">
-          <BusinessCardPreview data={data} scale={convertLegacyDisplayScale(1.35)} side={previewSideLayout} settings={settings} fontAssets={layout.fontAssets} />
+          <BusinessCardPreview data={getRenderDataForSide(previewSide, data)} scale={convertLegacyDisplayScale(1.35)} side={previewSideLayout} settings={settings} fontAssets={layout.fontAssets} />
         </div>
       </div>
     </div>
@@ -1082,7 +1220,7 @@ const CustomizerScreen = ({ layout, onBack, onComplete, settings, productHandle,
           <div className={`bg-slate-900 rounded-[20px] p-6 ${hasBackSide ? 'flex flex-col md:flex-row gap-6 overflow-x-auto' : 'flex justify-center'}`}>
             <div className="shrink-0">
               <BusinessCardPreview
-                data={data}
+                data={getRenderDataForSide('front', data)}
                 scale={hasBackSide ? convertLegacyDisplayScale(1.05) : convertLegacyDisplayScale(1.6)}
                 side={layout.front}
                 settings={settings}
@@ -1092,7 +1230,7 @@ const CustomizerScreen = ({ layout, onBack, onComplete, settings, productHandle,
             {hasBackSide && layout.back && (
               <div className="shrink-0">
                 <BusinessCardPreview
-                  data={data}
+                  data={getRenderDataForSide('back', data)}
                   scale={convertLegacyDisplayScale(1.05)}
                   side={layout.back}
                   settings={settings}
@@ -1234,7 +1372,7 @@ const CustomizerScreen = ({ layout, onBack, onComplete, settings, productHandle,
               </div>
             </div>
             <div className="bg-slate-100 rounded-2xl p-3">
-              <BusinessCardPreview data={data} scale={convertLegacyDisplayScale(1)} side={layout.front} settings={settings} fontAssets={layout.fontAssets} />
+              <BusinessCardPreview data={getRenderDataForSide('front', data)} scale={convertLegacyDisplayScale(1)} side={layout.front} settings={settings} fontAssets={layout.fontAssets} />
             </div>
             <p className="text-sm text-slate-600 leading-relaxed">
               By approving, you confirm that all information is accurate and print-ready. Theme Vault is not responsible for any typos, missing information, or design changes requested after approval. Production begins immediately once this proof is accepted.
@@ -1249,9 +1387,9 @@ const CustomizerScreen = ({ layout, onBack, onComplete, settings, productHandle,
 
       <div className="fixed -left-[9999px] top-0" aria-hidden ref={proofRef}>
         <div className="p-4 bg-white rounded-[20px] w-[720px] space-y-4">
-          <BusinessCardPreview data={data} scale={convertLegacyDisplayScale(1.6)} side={layout.front} settings={settings} fontAssets={layout.fontAssets} />
+          <BusinessCardPreview data={getRenderDataForSide('front', data)} scale={convertLegacyDisplayScale(1.6)} side={layout.front} settings={settings} fontAssets={layout.fontAssets} />
           {layout.back && (
-            <BusinessCardPreview data={data} scale={convertLegacyDisplayScale(1.6)} side={layout.back} settings={settings} fontAssets={layout.fontAssets} />
+            <BusinessCardPreview data={getRenderDataForSide('back', data)} scale={convertLegacyDisplayScale(1.6)} side={layout.back} settings={settings} fontAssets={layout.fontAssets} />
           )}
         </div>
       </div>
