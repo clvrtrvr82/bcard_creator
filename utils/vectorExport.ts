@@ -116,7 +116,7 @@ const buildFontFaceCss = (fontAssets: FontAsset[]) => {
 
   return uniqueAssets.map((asset) => {
     const safeName = asset.name.replace(/[^a-zA-Z0-9 _-]/g, '').trim() || 'UploadedFont';
-    return `@font-face { font-family: '${safeName}'; src: url(${asset.dataUrl}) format('${asset.format}'); font-display: swap; font-weight: 400; font-style: normal; }`;
+    return `@font-face { font-family: '${safeName}'; src: url(${asset.dataUrl}) format('${asset.format}'); font-display: swap; font-weight: 100 900; font-style: normal italic; }`;
   }).join('\n');
 };
 

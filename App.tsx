@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useMemo, useCallback, useRef } from 'react';
 import { HashRouter, Routes, Route, Link, useNavigate } from 'react-router-dom';
-import { CardData, Layout, AppSettings, BrandConfig, ColorPreset, SideLayout, FieldStyle } from './types';
+import { CardData, Layout, AppSettings, BrandConfig, ColorPreset, SideLayout, FieldStyle, FontAsset, CMYK } from './types';
 import { BRAND_CONFIGS } from './constants';
 import { CARD_CANVAS_VERSION, CARD_HEIGHT, CARD_WIDTH, convertLegacyDisplayScale, normalizeFieldStyle } from './cardCanvas';
 import { loadPersistedLayouts, persistLayouts } from './persistence';
@@ -502,6 +502,165 @@ const SIDE_AWARE_NATIVE_KEYS = new Set(['name', 'jobTitle', 'email', 'phone', 'm
 
 const toSideValueKey = (side: CardSide, key: string) => `${SIDE_VALUE_PREFIX}${side}:${key}`;
 
+const pxToPrintPt = (px: number) => (px * 72) / 300;
+
+const parseCssStyleString = (styleValue?: string | null) => {
+  return (styleValue || '')
+    .split(';')
+    .map((chunk) => chunk.trim())
+    .filter(Boolean)
+    .reduce<Record<string, string>>((acc, declaration) => {
+      const separator = declaration.indexOf(':');
+      if (separator === -1) return acc;
+      const key = declaration.slice(0, separator).trim().toLowerCase();
+      const value = declaration.slice(separator + 1).trim();
+      if (!key) return acc;
+      acc[key] = value;
+      return acc;
+    }, {});
+};
+
+const parsePrintCmykLabel = (label?: string | null): CMYK | null => {
+  if (!label) return null;
+  const match = label.match(/C\s*(\d+)\s*M\s*(\d+)\s*Y\s*(\d+)\s*K\s*(\d+)/i);
+  if (!match) return null;
+  return normalizeCmyk({
+    c: Number(match[1]),
+    m: Number(match[2]),
+    y: Number(match[3]),
+    k: Number(match[4])
+  });
+};
+
+const normalizeFontFamilyKey = (fontFamily: string) => {
+  const primary = fontFamily.split(',')[0] || fontFamily;
+  return primary.replace(/['"]/g, '').trim().toLowerCase();
+};
+
+const registerPdfFonts = (pdf: jsPDF, fontAssets: FontAsset[]) => {
+  const registered = new Map<string, string>();
+
+  fontAssets.forEach((asset) => {
+    if (!asset?.name || !asset?.dataUrl) return;
+    if (!['truetype', 'opentype'].includes(asset.format)) return;
+    const base64 = asset.dataUrl.split(',')[1];
+    if (!base64) return;
+
+    const safeId = (asset.id || asset.name).replace(/[^a-zA-Z0-9_-]/g, '_');
+    const fileName = `font-${safeId}.ttf`;
+    const pdfFontName = `CardFont_${safeId}`;
+
+    try {
+      pdf.addFileToVFS(fileName, base64);
+      pdf.addFont(fileName, pdfFontName, 'normal');
+      registered.set(normalizeFontFamilyKey(asset.name), pdfFontName);
+    } catch (error) {
+      console.warn('Unable to register print font asset', asset.name, error);
+    }
+  });
+
+  return registered;
+};
+
+const stripSvgTextPaint = (svgMarkup: string) => {
+  const parser = new DOMParser();
+  const parsed = parser.parseFromString(svgMarkup, 'image/svg+xml');
+  const serializer = new XMLSerializer();
+  const textNodes = Array.from(parsed.querySelectorAll('text'));
+
+  textNodes.forEach((node) => {
+    const style = parseCssStyleString(node.getAttribute('style'));
+    style.fill = 'transparent';
+    const rebuiltStyle = Object.entries(style).map(([key, value]) => `${key}:${value}`).join(';');
+    node.setAttribute('style', rebuiltStyle);
+    node.setAttribute('fill', 'transparent');
+    node.setAttribute('opacity', '0');
+  });
+
+  return serializer.serializeToString(parsed.documentElement);
+};
+
+const resolvePdfFont = (
+  fontFamilyRaw: string,
+  fontWeightRaw: string,
+  fontStyleRaw: string,
+  registeredFonts: Map<string, string>
+) => {
+  const key = normalizeFontFamilyKey(fontFamilyRaw || '');
+  const custom = registeredFonts.get(key);
+  if (custom) {
+    return { fontName: custom, fontStyle: 'normal' as const };
+  }
+
+  const isSerif = key.includes('serif') || key.includes('playfair') || key.includes('georgia');
+  const fontName = isSerif ? 'times' : 'helvetica';
+  const numericWeight = Number(fontWeightRaw || '400');
+  const isBold = Number.isFinite(numericWeight) ? numericWeight >= 700 : /bold|black|heavy|semibold/i.test(fontWeightRaw || '');
+  const isItalic = (fontStyleRaw || '').toLowerCase().includes('italic');
+
+  if (isBold && isItalic) return { fontName, fontStyle: 'bolditalic' as const };
+  if (isBold) return { fontName, fontStyle: 'bold' as const };
+  if (isItalic) return { fontName, fontStyle: 'italic' as const };
+  return { fontName, fontStyle: 'normal' as const };
+};
+
+const applyPdfCmykTextColor = (pdf: jsPDF, cmyk: CMYK | null, fallbackFill?: string) => {
+  if (cmyk) {
+    pdf.setTextColor(
+      (cmyk.c / 100).toFixed(3) as unknown as number,
+      (cmyk.m / 100).toFixed(3) as unknown as number,
+      (cmyk.y / 100).toFixed(3) as unknown as number,
+      (cmyk.k / 100).toFixed(3) as unknown as number
+    );
+    return;
+  }
+  pdf.setTextColor(fallbackFill || '#000000');
+};
+
+const overlaySvgTextForPrint = (pdf: jsPDF, svgMarkup: string, registeredFonts: Map<string, string>) => {
+  const parser = new DOMParser();
+  const parsed = parser.parseFromString(svgMarkup, 'image/svg+xml');
+  const textElements = Array.from(parsed.querySelectorAll('text'));
+
+  textElements.forEach((textElement) => {
+    const style = parseCssStyleString(textElement.getAttribute('style'));
+    const xPx = Number(textElement.getAttribute('x') || '0');
+    const yPx = Number(textElement.getAttribute('y') || '0');
+    const fontSizePx = Number((style['font-size'] || '16').replace(/px/i, '').trim()) || 16;
+    const fontFamily = style['font-family'] || 'helvetica';
+    const fontWeight = style['font-weight'] || '400';
+    const fontStyle = style['font-style'] || 'normal';
+    const textAnchor = (style['text-anchor'] || 'start').toLowerCase();
+    const fillColor = style.fill;
+    const cmyk = parsePrintCmykLabel(textElement.getAttribute('data-print-cmyk')) || hexToCmyk(fillColor);
+    const { fontName, fontStyle: resolvedFontStyle } = resolvePdfFont(fontFamily, fontWeight, fontStyle, registeredFonts);
+    const align = textAnchor === 'middle' ? 'center' : textAnchor === 'end' ? 'right' : 'left';
+
+    pdf.setFont(fontName, resolvedFontStyle);
+    pdf.setFontSize(pxToPrintPt(fontSizePx));
+    applyPdfCmykTextColor(pdf, cmyk, fillColor);
+
+    const tspans = Array.from(textElement.querySelectorAll('tspan'));
+    if (!tspans.length) {
+      const raw = textElement.textContent || '';
+      const content = raw.length ? raw : ' ';
+      const baselinePx = yPx + fontSizePx * 0.82;
+      pdf.text(content, pxToPrintPt(xPx), pxToPrintPt(baselinePx), { align });
+      return;
+    }
+
+    let currentYpx = yPx;
+    tspans.forEach((tspan, index) => {
+      const dyPx = Number(tspan.getAttribute('dy') || (index === 0 ? '0' : `${fontSizePx * 1.25}`));
+      if (index > 0) currentYpx += dyPx;
+      const raw = tspan.textContent || '';
+      const content = raw.length ? raw : ' ';
+      const baselinePx = currentYpx + fontSizePx * 0.82;
+      pdf.text(content, pxToPrintPt(xPx), pxToPrintPt(baselinePx), { align });
+    });
+  });
+};
+
 const fetchWithTimeout = async (input: RequestInfo | URL, init: RequestInit = {}, timeoutMs = PRODUCT_REQUEST_TIMEOUT_MS) => {
   const controller = new AbortController();
   const timeoutId = window.setTimeout(() => controller.abort(), timeoutMs);
@@ -873,6 +1032,7 @@ const CustomizerScreen = ({ layout, onBack, onComplete, settings, productHandle,
       ...(layout.back ? [{ sideName: 'back' as const, sideLayout: layout.back }] : [])
     ];
     const pdf = new jsPDF({ orientation: 'landscape', unit: 'in', format: [PRINT_CARD_WIDTH_IN, PRINT_CARD_HEIGHT_IN], compress: true });
+    const registeredFonts = registerPdfFonts(pdf, layout.fontAssets || []);
 
     pdf.setProperties({
       title: `${layout.name} Print Ready`,
@@ -887,7 +1047,9 @@ const CustomizerScreen = ({ layout, onBack, onComplete, settings, productHandle,
 
       const sideData = getRenderDataForSide(sides[index].sideName, data);
       const svg = buildCardSvg({ side: sides[index].sideLayout, data: sideData, settings, fontAssets: layout.fontAssets || [] });
-      await renderSvgToPdfPage(pdf, svg);
+      const backgroundSvg = stripSvgTextPaint(svg);
+      await renderSvgToPdfPage(pdf, backgroundSvg);
+      overlaySvgTextForPrint(pdf, svg, registeredFonts);
     }
 
     return pdf;
