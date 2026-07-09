@@ -1,5 +1,5 @@
 import { AppSettings, CardData, CMYK, ConditionalRule, FieldStyle, FontAsset, SideLayout } from '../types';
-import { cmykToHex, normalizeCmyk } from './color';
+import { cmykToHex, hexToCmyk, normalizeCmyk } from './color';
 import { CARD_HEIGHT, CARD_WIDTH } from '../cardCanvas';
 
 interface BuildCardSvgOptions {
@@ -129,7 +129,8 @@ const getOrderedFieldKeys = (side: SideLayout) => {
 };
 
 export const buildCardSvg = ({ side, data, settings, fontAssets = [] }: BuildCardSvgOptions) => {
-  const backgroundColor = cmykToHex(side.cmykBackgroundColor) || side.backgroundColor || '#ffffff';
+  const resolvedBackgroundCmyk = normalizeCmyk(side.cmykBackgroundColor || hexToCmyk(side.backgroundColor) || { c: 0, m: 0, y: 0, k: 0 });
+  const backgroundColor = cmykToHex(resolvedBackgroundCmyk) || side.backgroundColor || '#ffffff';
   const orderedKeys = getOrderedFieldKeys(side);
   const clipDefs: string[] = [];
   const textClipBleed = 2;
@@ -146,7 +147,8 @@ export const buildCardSvg = ({ side, data, settings, fontAssets = [] }: BuildCar
     }
     if (!content) return '';
 
-    const textColor = styled.cmyk ? cmykToHex(styled.cmyk) : (styled.color || '#000000');
+    const resolvedTextCmyk = normalizeCmyk(styled.cmyk || hexToCmyk(styled.color) || { c: 0, m: 0, y: 0, k: 100 });
+    const textColor = cmykToHex(resolvedTextCmyk) || styled.color || '#000000';
     const lineHeight = styled.fontSize * (styled.lineHeight ?? 1.25);
     const lineCount = content.split('\n').length;
     const textHeight = styled.height ?? Math.max(lineHeight * lineCount, styled.fontSize);

@@ -1,7 +1,7 @@
 
 import React, { useCallback, useEffect, useLayoutEffect, useRef } from 'react';
 import { CardData, FieldStyle, SideLayout, CMYK, ConditionalRule, AppSettings, FontAsset } from '../types';
-import { cmykToHex } from '../utils/color';
+import { cmykToHex, hexToCmyk, normalizeCmyk } from '../utils/color';
 import { CARD_HEIGHT, CARD_WIDTH } from '../cardCanvas';
 
 interface BusinessCardPreviewProps {
@@ -71,7 +71,8 @@ const BusinessCardPreview = React.forwardRef<HTMLDivElement, BusinessCardPreview
   const baseWidth = CARD_WIDTH;
   const baseHeight = CARD_HEIGHT;
 
-  const bgColor = cmykToHex(side.cmykBackgroundColor) || side.backgroundColor || '#ffffff';
+  const resolvedBackgroundCmyk = normalizeCmyk(side.cmykBackgroundColor || hexToCmyk(side.backgroundColor) || { c: 0, m: 0, y: 0, k: 0 });
+  const bgColor = cmykToHex(resolvedBackgroundCmyk) || side.backgroundColor || '#ffffff';
 
   const fontStyleRef = useRef<HTMLStyleElement | null>(null);
   const containerRef = useRef<HTMLDivElement | null>(null);
@@ -261,7 +262,8 @@ const BusinessCardPreview = React.forwardRef<HTMLDivElement, BusinessCardPreview
     if (!displayContent) return null;
 
     const isSelected = selectedFieldKey === key;
-    const textColor = styled.cmyk ? cmykToHex(styled.cmyk) : (styled.color || '#000000');
+    const resolvedTextCmyk = normalizeCmyk(styled.cmyk || hexToCmyk(styled.color) || { c: 0, m: 0, y: 0, k: 100 });
+    const textColor = cmykToHex(resolvedTextCmyk) || styled.color || '#000000';
     
     const fieldStyle: React.CSSProperties = {
       position: 'absolute',

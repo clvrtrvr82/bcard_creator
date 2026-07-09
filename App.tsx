@@ -8,6 +8,7 @@ import BusinessCardPreview from './components/BusinessCardPreview';
 import AdminDashboard from './components/AdminDashboard';
 import html2canvas from 'html2canvas';
 import jsPDF from 'jspdf';
+import 'svg2pdf.js';
 import { cmykToHex, cmykToRgb, hexToCmyk, hexToRgb, normalizeCmyk, normalizeHex, normalizeRgb, rgbToCmyk } from './utils/color';
 import { pixelsToPoints } from './cardCanvas';
 import { buildCardSvg } from './utils/vectorExport';
@@ -501,61 +502,6 @@ const SIDE_AWARE_NATIVE_KEYS = new Set(['name', 'jobTitle', 'email', 'phone', 'm
 
 const toSideValueKey = (side: CardSide, key: string) => `${SIDE_VALUE_PREFIX}${side}:${key}`;
 
-const getPrimaryPrintSwatch = (layout: Layout, side: SideLayout) => {
-  return normalizeCmyk(
-    layout.colorPresets?.[0]?.cmyk
-      || side.cmykBackgroundColor
-      || hexToCmyk(side.backgroundColor)
-      || { c: 0, m: 0, y: 0, k: 0 }
-  );
-};
-
-const normalizeSideForPrint = (layout: Layout, side: SideLayout): SideLayout => {
-  const swatch = getPrimaryPrintSwatch(layout, side);
-  const normalizedFields = Object.entries(side.fields || {}).reduce<Record<string, FieldStyle>>((acc, [key, field]) => {
-    const fieldCmyk = normalizeCmyk(field.cmyk || hexToCmyk(field.color) || swatch);
-    acc[key] = {
-      ...field,
-      cmyk: fieldCmyk,
-      color: cmykToHex(fieldCmyk) || field.color
-    };
-    return acc;
-  }, {});
-
-  return {
-    ...side,
-    cmykBackgroundColor: swatch,
-    backgroundColor: cmykToHex(swatch) || side.backgroundColor,
-    fields: normalizedFields
-  };
-};
-
-const svgToPngDataUrl = async (svgMarkup: string, widthPx = CARD_WIDTH, heightPx = CARD_HEIGHT): Promise<string> => {
-  const svgBlob = new Blob([svgMarkup], { type: 'image/svg+xml;charset=utf-8' });
-  const blobUrl = URL.createObjectURL(svgBlob);
-
-  try {
-    const image = await new Promise<HTMLImageElement>((resolve, reject) => {
-      const img = new Image();
-      img.crossOrigin = 'anonymous';
-      img.onload = () => resolve(img);
-      img.onerror = () => reject(new Error('Unable to render SVG artwork for print output.'));
-      img.src = blobUrl;
-    });
-
-    const canvas = document.createElement('canvas');
-    canvas.width = widthPx;
-    canvas.height = heightPx;
-    const ctx = canvas.getContext('2d');
-    if (!ctx) throw new Error('Canvas 2D context unavailable.');
-    ctx.clearRect(0, 0, widthPx, heightPx);
-    ctx.drawImage(image, 0, 0, widthPx, heightPx);
-    return canvas.toDataURL('image/png');
-  } finally {
-    URL.revokeObjectURL(blobUrl);
-  }
-};
-
 const fetchWithTimeout = async (input: RequestInfo | URL, init: RequestInit = {}, timeoutMs = PRODUCT_REQUEST_TIMEOUT_MS) => {
   const controller = new AbortController();
   const timeoutId = window.setTimeout(() => controller.abort(), timeoutMs);
@@ -900,6 +846,27 @@ const CustomizerScreen = ({ layout, onBack, onComplete, settings, productHandle,
     return pdf;
   };
 
+  const renderSvgToPdfPage = async (pdf: jsPDF, svgMarkup: string) => {
+    const parser = new DOMParser();
+    const parsed = parser.parseFromString(svgMarkup, 'image/svg+xml');
+    const svgElement = parsed.documentElement as unknown as SVGElement;
+    const svgRenderer = (pdf as unknown as {
+      svg?: (element: SVGElement, options?: { x?: number; y?: number; width?: number; height?: number; preserveAspectRatio?: string }) => Promise<void>;
+    }).svg;
+
+    if (!svgRenderer) {
+      throw new Error('SVG-to-PDF renderer is unavailable. Ensure svg2pdf.js is loaded.');
+    }
+
+    await svgRenderer.call(pdf, svgElement, {
+      x: 0,
+      y: 0,
+      width: PRINT_CARD_WIDTH_IN,
+      height: PRINT_CARD_HEIGHT_IN,
+      preserveAspectRatio: 'none'
+    });
+  };
+
   const createPrintReadyPdf = async () => {
     const sides: Array<{ sideName: CardSide; sideLayout: SideLayout }> = [
       { sideName: 'front', sideLayout: layout.front },
@@ -918,11 +885,9 @@ const CustomizerScreen = ({ layout, onBack, onComplete, settings, productHandle,
         pdf.addPage([PRINT_CARD_WIDTH_IN, PRINT_CARD_HEIGHT_IN], 'landscape');
       }
 
-      const sideForPrint = normalizeSideForPrint(layout, sides[index].sideLayout);
       const sideData = getRenderDataForSide(sides[index].sideName, data);
-      const svg = buildCardSvg({ side: sideForPrint, data: sideData, settings, fontAssets: layout.fontAssets || [] });
-      const pngDataUrl = await svgToPngDataUrl(svg, CARD_WIDTH, CARD_HEIGHT);
-      pdf.addImage(pngDataUrl, 'PNG', 0, 0, PRINT_CARD_WIDTH_IN, PRINT_CARD_HEIGHT_IN, undefined, 'FAST');
+      const svg = buildCardSvg({ side: sides[index].sideLayout, data: sideData, settings, fontAssets: layout.fontAssets || [] });
+      await renderSvgToPdfPage(pdf, svg);
     }
 
     return pdf;
@@ -1257,6 +1222,9 @@ const CustomizerScreen = ({ layout, onBack, onComplete, settings, productHandle,
               <CheckCircle size={14} /> Approve Proof
             </button>
           </div>
+          <div className="mt-4 rounded-2xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-900 leading-relaxed">
+            Please review all spelling, names, titles, contact information, alignment, and brand details carefully before approval. Approval confirms the artwork is final and production-ready. Once approved, the order may proceed immediately and we cannot accept liability for typographical errors, omitted information, or customer-approved content issues.
+          </div>
         </div>
       </div>
     </div>
@@ -1368,14 +1336,14 @@ const CustomizerScreen = ({ layout, onBack, onComplete, settings, productHandle,
               </div>
               <div>
                 <p className="text-lg font-black text-slate-900">Approve Proof</p>
-                <p className="text-sm text-slate-500">Confirm spelling, contact details, and layout placement.</p>
+                <p className="text-sm text-slate-500">Final confirmation: are you sure this proof is ready for production?</p>
               </div>
             </div>
             <div className="bg-slate-100 rounded-2xl p-3">
               <BusinessCardPreview data={getRenderDataForSide('front', data)} scale={convertLegacyDisplayScale(1)} side={layout.front} settings={settings} fontAssets={layout.fontAssets} />
             </div>
             <p className="text-sm text-slate-600 leading-relaxed">
-              By approving, you confirm that all information is accurate and print-ready. Theme Vault is not responsible for any typos, missing information, or design changes requested after approval. Production begins immediately once this proof is accepted.
+              Please double-check every visible detail before continuing, including spelling, phone numbers, email addresses, titles, positioning, and brand presentation. By selecting Looks Good, you confirm the proof is accurate, approved for print, and authorized for production release. After approval, changes may not be possible and we are not liable for customer-approved errors, omissions, or late correction requests.
             </p>
             <div className="flex flex-wrap gap-2 justify-end">
               <button onClick={() => setShowApprovalModal(false)} className="px-4 py-2 rounded-xl border border-slate-200 text-xs font-black uppercase tracking-[0.3em] text-slate-500">Review Again</button>
