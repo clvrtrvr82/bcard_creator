@@ -514,6 +514,7 @@ const SIDE_AWARE_NATIVE_KEYS = new Set(['name', 'jobTitle', 'email', 'phone', 'm
 const toSideValueKey = (side: CardSide, key: string) => `${SIDE_VALUE_PREFIX}${side}:${key}`;
 
 const pxToPrintPt = (px: number) => (px * 72) / 300;
+const pxToIn = (px: number) => px / 300;
 
 const parseCssStyleString = (styleValue?: string | null) => {
   return (styleValue || '')
@@ -656,7 +657,7 @@ const overlaySvgTextForPrint = (pdf: jsPDF, svgMarkup: string, registeredFonts: 
       const raw = textElement.textContent || '';
       const content = raw.length ? raw : ' ';
       const baselinePx = yPx + fontSizePx * 0.82;
-      pdf.text(content, pxToPrintPt(xPx), pxToPrintPt(baselinePx), { align });
+      pdf.text(content, pxToIn(xPx), pxToIn(baselinePx), { align });
       return;
     }
 
@@ -667,7 +668,7 @@ const overlaySvgTextForPrint = (pdf: jsPDF, svgMarkup: string, registeredFonts: 
       const raw = tspan.textContent || '';
       const content = raw.length ? raw : ' ';
       const baselinePx = currentYpx + fontSizePx * 0.82;
-      pdf.text(content, pxToPrintPt(xPx), pxToPrintPt(baselinePx), { align });
+      pdf.text(content, pxToIn(xPx), pxToIn(baselinePx), { align });
     });
   });
 };
@@ -1108,7 +1109,7 @@ const CustomizerScreen = ({ layout, onBack, onComplete, settings, productHandle,
       ...(layout.back ? [{ sideName: 'back' as const, sideLayout: layout.back }] : [])
     ];
     const pdf = new jsPDF({ orientation: 'landscape', unit: 'in', format: [PRINT_CARD_WIDTH_IN, PRINT_CARD_HEIGHT_IN], compress: true });
-    registerPdfFonts(pdf, layout.fontAssets || []);
+    const registeredFonts = registerPdfFonts(pdf, layout.fontAssets || []);
 
     pdf.setProperties({
       title: `${layout.name} Print Ready`,
@@ -1123,8 +1124,8 @@ const CustomizerScreen = ({ layout, onBack, onComplete, settings, productHandle,
 
       const sideData = getRenderDataForSide(sides[index].sideName, data);
       const svg = buildCardSvg({ side: sides[index].sideLayout, data: sideData, settings, fontAssets: layout.fontAssets || [] });
-      const sidePng = await rasterizeSvgToPng(svg);
-      pdf.addImage(sidePng, 'PNG', 0, 0, PRINT_CARD_WIDTH_IN, PRINT_CARD_HEIGHT_IN, undefined, 'FAST');
+      await paintPrintPageBackground(pdf, sides[index].sideLayout);
+      overlaySvgTextForPrint(pdf, svg, registeredFonts);
     }
 
     return pdf;
