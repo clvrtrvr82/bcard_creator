@@ -91,6 +91,17 @@ const normalizeColorPresets = (presets?: ColorPreset[] | string[]): ColorPreset[
 };
 
 const normalizeLayout = (layout: Layout): Layout => {
+  const normalizedBackFields = layout.back ? normalizeFields(layout.back.fields, layout.canvasVersion) : undefined;
+  if (normalizedBackFields) {
+    const backFieldKeys = Object.keys(normalizedBackFields);
+    if (backFieldKeys.length === 1 && backFieldKeys[0] === 'backText' && normalizedBackFields.backText?.showInForm === false) {
+      normalizedBackFields.backText = {
+        ...normalizedBackFields.backText,
+        showInForm: true
+      };
+    }
+  }
+
   return {
     ...layout,
     canvasVersion: CARD_CANVAS_VERSION,
@@ -102,7 +113,7 @@ const normalizeLayout = (layout: Layout): Layout => {
     },
     back: layout.back ? {
       ...layout.back,
-      fields: normalizeFields(layout.back.fields, layout.canvasVersion),
+      fields: normalizedBackFields || normalizeFields(layout.back.fields, layout.canvasVersion),
       fieldOrder: Array.isArray(layout.back.fieldOrder) && layout.back.fieldOrder.length ? layout.back.fieldOrder : Object.keys(layout.back.fields)
     } : undefined,
     colorPresets: normalizeColorPresets(layout.colorPresets)

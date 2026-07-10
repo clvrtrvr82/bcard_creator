@@ -70,7 +70,7 @@ const createBackTemplate = (): SideLayout => ({
       fontWeight: '700',
       fontFamily: "'Inter', sans-serif",
       textAlign: 'center',
-      showInForm: false
+      showInForm: true
     }
   },
   fieldOrder: ['backText']
@@ -905,6 +905,10 @@ const LayoutEditor: React.FC<LayoutEditorProps> = ({ layout, onChange, settings,
     if (!selectedFieldCmyk) return '';
     return colorPresets.find((preset) => cmykEquals(preset.cmyk, selectedFieldCmyk))?.id || '';
   }, [colorPresets, selectedFieldCmyk]);
+  const selectedFieldColorPreset = useMemo(() => {
+    if (!selectedFieldColorPresetId) return null;
+    return colorPresets.find((preset) => preset.id === selectedFieldColorPresetId) || null;
+  }, [colorPresets, selectedFieldColorPresetId]);
   const placementPreviewData = useMemo(() => {
     if (!selectedFieldKey || !selectedField) return previewCard;
 
@@ -1951,14 +1955,30 @@ const LayoutEditor: React.FC<LayoutEditorProps> = ({ layout, onChange, settings,
                       </label>
                       <label className="text-xs font-semibold text-slate-500">Text Color
                         <div className="mt-1.5 flex items-center gap-2">
-                          <input type="color" value={selectedField.color || '#000000'} onChange={(e) => {
-                            handleFieldValueChange(selectedFieldKey, 'color', e.target.value);
-                            const nextCmyk = hexToCmyk(e.target.value);
-                            if (nextCmyk) handleFieldValueChange(selectedFieldKey, 'cmyk', normalizeCmyk(nextCmyk));
-                          }} className="h-11 w-16 rounded-xl bg-white border border-slate-200" />
-                          <input type="text" value={selectedField.color || '#000000'} onChange={(e) => handleFieldValueChange(selectedFieldKey, 'color', e.target.value)} className="flex-1 px-3 py-2.5 rounded-xl bg-white border border-slate-200 text-sm text-slate-800" />
+                          <input
+                            type="color"
+                            value={selectedField.color || '#000000'}
+                            onChange={(e) => {
+                              handleFieldValueChange(selectedFieldKey, 'color', e.target.value);
+                              const nextCmyk = hexToCmyk(e.target.value);
+                              if (nextCmyk) handleFieldValueChange(selectedFieldKey, 'cmyk', normalizeCmyk(nextCmyk));
+                            }}
+                            disabled={Boolean(selectedFieldColorPreset)}
+                            className="h-11 w-16 rounded-xl bg-white border border-slate-200 disabled:cursor-not-allowed disabled:opacity-60"
+                          />
+                          <input
+                            type="text"
+                            value={selectedField.color || '#000000'}
+                            onChange={(e) => handleFieldValueChange(selectedFieldKey, 'color', e.target.value)}
+                            disabled={Boolean(selectedFieldColorPreset)}
+                            className="flex-1 px-3 py-2.5 rounded-xl bg-white border border-slate-200 text-sm text-slate-800 disabled:cursor-not-allowed disabled:opacity-60"
+                          />
                         </div>
-                        <span className="mt-1 block text-[11px] text-slate-400">Print target: {formatCmykLabel(selectedFieldCmyk)}</span>
+                        <span className="mt-1 block text-[11px] text-slate-400">
+                          {selectedFieldColorPreset
+                            ? `Using saved swatch ${formatColorPresetLabel(selectedFieldColorPreset)}. Choose \"Choose a saved swatch\" to unlock manual HEX editing.`
+                            : `Print target: ${formatCmykLabel(selectedFieldCmyk)}`}
+                        </span>
                       </label>
                       <label className="text-xs font-semibold text-slate-500">Background Fill
                         <input type="color" value={selectedField.backgroundColor || '#ffffff'} onChange={(e) => handleFieldValueChange(selectedFieldKey, 'backgroundColor', e.target.value)} className="mt-1.5 w-full h-11 rounded-xl bg-white border border-slate-200" />
