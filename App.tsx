@@ -697,6 +697,26 @@ const rasterizeTemplateToPng = async (source: string) => {
   return canvas.toDataURL('image/png');
 };
 
+const rasterizeSvgToPng = async (svgMarkup: string) => {
+  const svgBlob = new Blob([svgMarkup], { type: 'image/svg+xml;charset=utf-8' });
+  const svgUrl = URL.createObjectURL(svgBlob);
+
+  try {
+    const image = await loadImageElement(svgUrl);
+    const canvas = document.createElement('canvas');
+    canvas.width = CARD_WIDTH;
+    canvas.height = CARD_HEIGHT;
+    const ctx = canvas.getContext('2d');
+    if (!ctx) {
+      throw new Error('Unable to prepare print canvas for SVG rendering.');
+    }
+    ctx.drawImage(image, 0, 0, CARD_WIDTH, CARD_HEIGHT);
+    return canvas.toDataURL('image/png');
+  } finally {
+    URL.revokeObjectURL(svgUrl);
+  }
+};
+
 const paintPrintPageBackground = async (pdf: jsPDF, sideLayout: SideLayout) => {
   const resolvedBackgroundCmyk = normalizeCmyk(sideLayout.cmykBackgroundColor || hexToCmyk(sideLayout.backgroundColor) || { c: 0, m: 0, y: 0, k: 0 });
   pdf.setFillColor(
@@ -1088,7 +1108,7 @@ const CustomizerScreen = ({ layout, onBack, onComplete, settings, productHandle,
       ...(layout.back ? [{ sideName: 'back' as const, sideLayout: layout.back }] : [])
     ];
     const pdf = new jsPDF({ orientation: 'landscape', unit: 'in', format: [PRINT_CARD_WIDTH_IN, PRINT_CARD_HEIGHT_IN], compress: true });
-    const registeredFonts = registerPdfFonts(pdf, layout.fontAssets || []);
+    registerPdfFonts(pdf, layout.fontAssets || []);
 
     pdf.setProperties({
       title: `${layout.name} Print Ready`,
@@ -1103,10 +1123,8 @@ const CustomizerScreen = ({ layout, onBack, onComplete, settings, productHandle,
 
       const sideData = getRenderDataForSide(sides[index].sideName, data);
       const svg = buildCardSvg({ side: sides[index].sideLayout, data: sideData, settings, fontAssets: layout.fontAssets || [] });
-      const textlessSvg = stripSvgTextPaint(svg);
-      await paintPrintPageBackground(pdf, sides[index].sideLayout);
-      await renderSvgToPdfPage(pdf, textlessSvg);
-      overlaySvgTextForPrint(pdf, svg, registeredFonts);
+      const sidePng = await rasterizeSvgToPng(svg);
+      pdf.addImage(sidePng, 'PNG', 0, 0, PRINT_CARD_WIDTH_IN, PRINT_CARD_HEIGHT_IN, undefined, 'FAST');
     }
 
     return pdf;
