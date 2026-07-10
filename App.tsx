@@ -672,6 +672,51 @@ const overlaySvgTextForPrint = (pdf: jsPDF, svgMarkup: string, registeredFonts: 
   });
 };
 
+const loadImageElement = (source: string): Promise<HTMLImageElement> => {
+  return new Promise((resolve, reject) => {
+    const image = new Image();
+    image.decoding = 'async';
+    image.crossOrigin = 'anonymous';
+    image.onload = () => resolve(image);
+    image.onerror = () => reject(new Error('Unable to load template image for print rendering.'));
+    image.src = source;
+  });
+};
+
+const rasterizeTemplateToPng = async (source: string) => {
+  const image = await loadImageElement(source);
+  const canvas = document.createElement('canvas');
+  canvas.width = CARD_WIDTH;
+  canvas.height = CARD_HEIGHT;
+  const ctx = canvas.getContext('2d');
+  if (!ctx) {
+    throw new Error('Unable to prepare print canvas for template rendering.');
+  }
+  // Match preview behavior: stretch template to exact card dimensions.
+  ctx.drawImage(image, 0, 0, CARD_WIDTH, CARD_HEIGHT);
+  return canvas.toDataURL('image/png');
+};
+
+const paintPrintPageBackground = async (pdf: jsPDF, sideLayout: SideLayout) => {
+  const resolvedBackgroundCmyk = normalizeCmyk(sideLayout.cmykBackgroundColor || hexToCmyk(sideLayout.backgroundColor) || { c: 0, m: 0, y: 0, k: 0 });
+  pdf.setFillColor(
+    (resolvedBackgroundCmyk.c / 100).toFixed(3) as unknown as number,
+    (resolvedBackgroundCmyk.m / 100).toFixed(3) as unknown as number,
+    (resolvedBackgroundCmyk.y / 100).toFixed(3) as unknown as number,
+    (resolvedBackgroundCmyk.k / 100).toFixed(3) as unknown as number
+  );
+  pdf.rect(0, 0, PRINT_CARD_WIDTH_IN, PRINT_CARD_HEIGHT_IN, 'F');
+
+  if (!sideLayout.backgroundImage) return;
+
+  try {
+    const templatePng = await rasterizeTemplateToPng(sideLayout.backgroundImage);
+    pdf.addImage(templatePng, 'PNG', 0, 0, PRINT_CARD_WIDTH_IN, PRINT_CARD_HEIGHT_IN, undefined, 'FAST');
+  } catch (error) {
+    console.warn('Unable to rasterize template image for print PDF page.', error);
+  }
+};
+
 const fetchWithTimeout = async (input: RequestInfo | URL, init: RequestInit = {}, timeoutMs = PRODUCT_REQUEST_TIMEOUT_MS) => {
   const controller = new AbortController();
   const timeoutId = window.setTimeout(() => controller.abort(), timeoutMs);
@@ -1058,8 +1103,9 @@ const CustomizerScreen = ({ layout, onBack, onComplete, settings, productHandle,
 
       const sideData = getRenderDataForSide(sides[index].sideName, data);
       const svg = buildCardSvg({ side: sides[index].sideLayout, data: sideData, settings, fontAssets: layout.fontAssets || [] });
-      const backgroundSvg = stripSvgTextPaint(svg);
-      await renderSvgToPdfPage(pdf, backgroundSvg);
+      const textlessSvg = stripSvgTextPaint(svg);
+      await paintPrintPageBackground(pdf, sides[index].sideLayout);
+      await renderSvgToPdfPage(pdf, textlessSvg);
       overlaySvgTextForPrint(pdf, svg, registeredFonts);
     }
 

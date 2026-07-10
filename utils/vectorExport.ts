@@ -183,7 +183,7 @@ export const buildCardSvg = ({ side, data, settings, fontAssets = [] }: BuildCar
       ? `<rect x="${xBase}" y="${styled.top}" width="${styled.width ?? clipWidth}" height="${textHeight}" fill="${styled.backgroundColor}" opacity="${styled.opacity ?? 1}" />`
       : '';
 
-    const textNode = `<text x="${x}" y="${styled.top}" style="${escapeXml(textStyle.join(';'))}" opacity="${styled.opacity ?? 1}" data-print-cmyk="${escapeXml(formatCmykLabel(styled.cmyk))}">${content
+    const textNode = `<text x="${x}" y="${styled.top}" style="${escapeXml(textStyle.join(';'))}" opacity="${styled.opacity ?? 1}" data-print-cmyk="${escapeXml(formatCmykLabel(resolvedTextCmyk))}">${content
       .split('\n')
       .map((line, lineIndex) => `<tspan x="${x}" dy="${lineIndex === 0 ? 0 : lineHeight}">${line ? escapeXml(line) : '&#160;'}</tspan>`)
       .join('')}</text>`;
