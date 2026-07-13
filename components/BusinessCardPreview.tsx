@@ -1,9 +1,22 @@
 
-import React, { useCallback, useEffect, useLayoutEffect, useMemo, useRef } from 'react';
+import React, { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import { CardData, FieldStyle, SideLayout, CMYK, ConditionalRule, AppSettings, FontAsset } from '../types';
 import { cmykToHex, hexToCmyk, normalizeCmyk } from '../utils/color';
 import { CARD_HEIGHT, CARD_WIDTH } from '../cardCanvas';
 import { buildCardSvg } from '../utils/vectorExport';
+import { getDocument, GlobalWorkerOptions } from 'pdfjs-dist';
+
+GlobalWorkerOptions.workerSrc = new URL('pdfjs-dist/build/pdf.worker.min.mjs', import.meta.url).toString();
+
+const dataUrlToUint8Array = (dataUrl: string) => {
+  const base64 = dataUrl.split(',')[1] || '';
+  const binary = window.atob(base64);
+  const bytes = new Uint8Array(binary.length);
+  for (let index = 0; index < binary.length; index += 1) {
+    bytes[index] = binary.charCodeAt(index);
+  }
+  return bytes;
+};
 
 interface BusinessCardPreviewProps {
   data: CardData;
@@ -71,10 +84,71 @@ const BusinessCardPreview = React.forwardRef<HTMLDivElement, BusinessCardPreview
 }, ref) => {
   const baseWidth = CARD_WIDTH;
   const baseHeight = CARD_HEIGHT;
+  const [pdfTemplatePreviewUrl, setPdfTemplatePreviewUrl] = useState<string | null>(null);
 
   const resolvedBackgroundCmyk = normalizeCmyk(side.cmykBackgroundColor || hexToCmyk(side.backgroundColor) || { c: 0, m: 0, y: 0, k: 0 });
   const bgColor = cmykToHex(resolvedBackgroundCmyk) || side.backgroundColor || '#ffffff';
-  const svgMarkup = useMemo(() => buildCardSvg({ side, data, settings, fontAssets }), [data, fontAssets, settings, side]);
+  useEffect(() => {
+    let cancelled = false;
+
+    const renderPdfPreview = async () => {
+      if (!side.backgroundPdf) {
+        if (!cancelled) setPdfTemplatePreviewUrl(null);
+        return;
+      }
+
+      try {
+        const loadingTask = getDocument({ data: dataUrlToUint8Array(side.backgroundPdf) });
+        const pdf = await loadingTask.promise;
+        const firstPage = await pdf.getPage(1);
+        const baseViewport = firstPage.getViewport({ scale: 1 });
+        const scale = CARD_WIDTH / baseViewport.width;
+        const viewport = firstPage.getViewport({ scale });
+
+        const canvas = document.createElement('canvas');
+        canvas.width = CARD_WIDTH;
+        canvas.height = CARD_HEIGHT;
+        const ctx = canvas.getContext('2d');
+        if (!ctx) throw new Error('Canvas rendering context unavailable for PDF preview.');
+
+        // Keep preview behavior consistent: template fills full card bounds.
+        ctx.clearRect(0, 0, CARD_WIDTH, CARD_HEIGHT);
+        const pageCanvas = document.createElement('canvas');
+        pageCanvas.width = Math.max(1, Math.round(viewport.width));
+        pageCanvas.height = Math.max(1, Math.round(viewport.height));
+        const pageCtx = pageCanvas.getContext('2d');
+        if (!pageCtx) throw new Error('Canvas rendering context unavailable for PDF page.');
+
+        await firstPage.render({ canvasContext: pageCtx, viewport }).promise;
+        ctx.drawImage(pageCanvas, 0, 0, CARD_WIDTH, CARD_HEIGHT);
+
+        if (!cancelled) {
+          setPdfTemplatePreviewUrl(canvas.toDataURL('image/png'));
+        }
+
+        await pdf.destroy();
+      } catch (error) {
+        console.warn('Unable to render PDF template preview.', error);
+        if (!cancelled) setPdfTemplatePreviewUrl(null);
+      }
+    };
+
+    renderPdfPreview();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [side.backgroundPdf]);
+
+  const previewSide = useMemo(() => {
+    if (side.backgroundImage || !pdfTemplatePreviewUrl) return side;
+    return {
+      ...side,
+      backgroundImage: pdfTemplatePreviewUrl
+    };
+  }, [pdfTemplatePreviewUrl, side]);
+
+  const svgMarkup = useMemo(() => buildCardSvg({ side: previewSide, data, settings, fontAssets }), [data, fontAssets, previewSide, settings]);
   const svgDataUrl = useMemo(() => `data:image/svg+xml;charset=utf-8,${encodeURIComponent(svgMarkup)}`, [svgMarkup]);
   const showHotspots = Boolean(onFieldClick || onFieldBoundsChange || selectedFieldKey);
 
