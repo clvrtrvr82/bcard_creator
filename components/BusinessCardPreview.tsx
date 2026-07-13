@@ -90,6 +90,9 @@ const BusinessCardPreview = React.forwardRef<HTMLDivElement, BusinessCardPreview
   const bgColor = cmykToHex(resolvedBackgroundCmyk) || side.backgroundColor || '#ffffff';
   useEffect(() => {
     let cancelled = false;
+    let loadingTask: ReturnType<typeof getDocument> | null = null;
+    let pdfDoc: Awaited<ReturnType<ReturnType<typeof getDocument>['promise']>> | null = null;
+    let firstPage: Awaited<ReturnType<NonNullable<typeof pdfDoc>['getPage']>> | null = null;
 
     const renderPdfPreview = async () => {
       if (!side.backgroundPdf) {
@@ -98,9 +101,9 @@ const BusinessCardPreview = React.forwardRef<HTMLDivElement, BusinessCardPreview
       }
 
       try {
-        const loadingTask = getDocument({ data: dataUrlToUint8Array(side.backgroundPdf) });
-        const pdf = await loadingTask.promise;
-        const firstPage = await pdf.getPage(1);
+        loadingTask = getDocument({ data: dataUrlToUint8Array(side.backgroundPdf) });
+        pdfDoc = await loadingTask.promise;
+        firstPage = await pdfDoc.getPage(1);
         const baseViewport = firstPage.getViewport({ scale: 1 });
         const scale = CARD_WIDTH / baseViewport.width;
         const viewport = firstPage.getViewport({ scale });
@@ -125,11 +128,25 @@ const BusinessCardPreview = React.forwardRef<HTMLDivElement, BusinessCardPreview
         if (!cancelled) {
           setPdfTemplatePreviewUrl(canvas.toDataURL('image/png'));
         }
-
-        await pdf.destroy();
       } catch (error) {
         console.warn('Unable to render PDF template preview.', error);
         if (!cancelled) setPdfTemplatePreviewUrl(null);
+      } finally {
+        try {
+          firstPage?.cleanup?.();
+        } catch {
+          // Ignore cleanup failures from PDF.js internals.
+        }
+        try {
+          pdfDoc?.cleanup?.();
+        } catch {
+          // Ignore cleanup failures from PDF.js internals.
+        }
+        try {
+          loadingTask?.destroy?.();
+        } catch {
+          // Ignore cleanup failures from PDF.js internals.
+        }
       }
     };
 
@@ -137,6 +154,11 @@ const BusinessCardPreview = React.forwardRef<HTMLDivElement, BusinessCardPreview
 
     return () => {
       cancelled = true;
+      try {
+        loadingTask?.destroy?.();
+      } catch {
+        // Ignore cleanup failures from PDF.js internals.
+      }
     };
   }, [side.backgroundPdf]);
 
