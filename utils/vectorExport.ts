@@ -1,3 +1,4 @@
+import * as opentype from 'opentype.js';
 import { AppSettings, CardData, CMYK, ConditionalRule, FieldStyle, FontAsset, SideLayout } from '../types';
 import { cmykToHex, hexToCmyk, normalizeCmyk } from './color';
 import { CARD_HEIGHT, CARD_WIDTH } from '../cardCanvas';
@@ -15,6 +16,134 @@ const escapeXml = (value: string) => value
   .replace(/>/g, '&gt;')
   .replace(/"/g, '&quot;')
   .replace(/'/g, '&apos;');
+
+const SVG_DATA_URL_PREFIX = /^data:image\/svg\+xml(?:;charset=[^;,]+)?(?:;base64)?,/i;
+const fontCache = new Map<string, opentype.Font | null>();
+
+const normalizeFontFamilyKey = (fontFamily: string) => {
+  const primary = fontFamily.split(',')[0] || fontFamily;
+  return primary.replace(/["']/g, '').trim().toLowerCase();
+};
+
+const decodeDataUrlPayload = (dataUrl: string) => {
+  const payload = dataUrl.slice(dataUrl.indexOf(',') + 1);
+  if (!payload) return '';
+  if (/;base64,/i.test(dataUrl)) {
+    return atob(payload);
+  }
+  return decodeURIComponent(payload);
+};
+
+const dataUrlToArrayBuffer = (dataUrl: string) => {
+  const decoded = decodeDataUrlPayload(dataUrl);
+  const bytes = new Uint8Array(decoded.length);
+  for (let index = 0; index < decoded.length; index += 1) {
+    bytes[index] = decoded.charCodeAt(index);
+  }
+  return bytes.buffer;
+};
+
+const parseNumericSvgDimension = (value?: string | null) => {
+  if (!value) return null;
+  const parsed = Number.parseFloat(value);
+  return Number.isFinite(parsed) && parsed > 0 ? parsed : null;
+};
+
+const buildBackgroundMarkup = (backgroundImage?: string) => {
+  if (!backgroundImage) return '';
+  if (!SVG_DATA_URL_PREFIX.test(backgroundImage)) {
+    return `<image href="${backgroundImage}" x="0" y="0" width="${CARD_WIDTH}" height="${CARD_HEIGHT}" preserveAspectRatio="none" />`;
+  }
+
+  try {
+    const decodedSvg = decodeDataUrlPayload(backgroundImage);
+    const parser = new DOMParser();
+    const serializer = new XMLSerializer();
+    const parsed = parser.parseFromString(decodedSvg, 'image/svg+xml');
+    const root = parsed.documentElement;
+    if (!root || root.tagName.toLowerCase() !== 'svg') {
+      return `<image href="${backgroundImage}" x="0" y="0" width="${CARD_WIDTH}" height="${CARD_HEIGHT}" preserveAspectRatio="none" />`;
+    }
+
+    const innerMarkup = Array.from(root.childNodes)
+      .map((node) => serializer.serializeToString(node))
+      .join('');
+    const viewBox = root.getAttribute('viewBox');
+    const width = parseNumericSvgDimension(root.getAttribute('width')) || CARD_WIDTH;
+    const height = parseNumericSvgDimension(root.getAttribute('height')) || CARD_HEIGHT;
+    const resolvedViewBox = viewBox || `0 0 ${width} ${height}`;
+
+    return `<svg x="0" y="0" width="${CARD_WIDTH}" height="${CARD_HEIGHT}" viewBox="${escapeXml(resolvedViewBox)}" preserveAspectRatio="none">${innerMarkup}</svg>`;
+  } catch {
+    return `<image href="${backgroundImage}" x="0" y="0" width="${CARD_WIDTH}" height="${CARD_HEIGHT}" preserveAspectRatio="none" />`;
+  }
+};
+
+const resolveOutlineFont = (fontFamily: string, fontAssets: FontAsset[]) => {
+  const key = normalizeFontFamilyKey(fontFamily);
+  const asset = fontAssets.find((entry) => normalizeFontFamilyKey(entry.name) === key && ['truetype', 'opentype', 'woff'].includes(entry.format));
+  if (!asset) return null;
+  const cached = fontCache.get(asset.id);
+  if (cached !== undefined) return cached;
+
+  try {
+    const font = opentype.parse(dataUrlToArrayBuffer(asset.dataUrl));
+    fontCache.set(asset.id, font);
+    return font;
+  } catch {
+    fontCache.set(asset.id, null);
+    return null;
+  }
+};
+
+const buildOutlinedTextMarkup = ({
+  content,
+  fontFamily,
+  fontSize,
+  x,
+  top,
+  lineHeight,
+  anchor,
+  textColor,
+  opacity,
+  printCmyk,
+  fontAssets
+}: {
+  content: string;
+  fontFamily: string;
+  fontSize: number;
+  x: number;
+  top: number;
+  lineHeight: number;
+  anchor: 'start' | 'middle' | 'end';
+  textColor: string;
+  opacity: number;
+  printCmyk: string;
+  fontAssets: FontAsset[];
+}) => {
+  const font = resolveOutlineFont(fontFamily, fontAssets);
+  if (!font) return null;
+
+  const lines = content.split('\n');
+  const baselineOffset = fontSize * 0.82;
+  const pathMarkup = lines.map((line, index) => {
+    const baselineY = top + baselineOffset + lineHeight * index;
+    const lineValue = line || ' ';
+    const lineWidth = font.getAdvanceWidth(lineValue, fontSize);
+    const startX = anchor === 'middle'
+      ? x - lineWidth / 2
+      : anchor === 'end'
+        ? x - lineWidth
+        : x;
+    const path = font.getPath(lineValue, startX, baselineY, fontSize, { kerning: true });
+    const pathData = path.toPathData(3);
+    if (!pathData) return '';
+    return `<path d="${escapeXml(pathData)}" fill="${textColor}" opacity="${opacity}" />`;
+  }).join('');
+
+  if (!pathMarkup) return null;
+  return `<g data-print-cmyk="${escapeXml(printCmyk)}">${pathMarkup}</g>`;
+};
 
 const toTitleCase = (value: string) => value.replace(/\w\S*/g, (chunk) => chunk.charAt(0).toUpperCase() + chunk.slice(1).toLowerCase());
 
@@ -183,7 +312,21 @@ export const buildCardSvg = ({ side, data, settings, fontAssets = [] }: BuildCar
       ? `<rect x="${xBase}" y="${styled.top}" width="${styled.width ?? clipWidth}" height="${textHeight}" fill="${styled.backgroundColor}" opacity="${styled.opacity ?? 1}" />`
       : '';
 
-    const textNode = `<text x="${x}" y="${styled.top}" style="${escapeXml(textStyle.join(';'))}" opacity="${styled.opacity ?? 1}" data-print-cmyk="${escapeXml(formatCmykLabel(resolvedTextCmyk))}">${content
+    const outlinedText = buildOutlinedTextMarkup({
+      content,
+      fontFamily: styled.fontFamily || 'Inter, sans-serif',
+      fontSize: styled.fontSize,
+      x,
+      top: styled.top,
+      lineHeight,
+      anchor,
+      textColor: textColor || '#000000',
+      opacity: styled.opacity ?? 1,
+      printCmyk: formatCmykLabel(resolvedTextCmyk),
+      fontAssets
+    });
+
+    const textNode = outlinedText || `<text x="${x}" y="${styled.top}" style="${escapeXml(textStyle.join(';'))}" opacity="${styled.opacity ?? 1}" data-print-cmyk="${escapeXml(formatCmykLabel(resolvedTextCmyk))}">${content
       .split('\n')
       .map((line, lineIndex) => `<tspan x="${x}" dy="${lineIndex === 0 ? 0 : lineHeight}">${line ? escapeXml(line) : '&#160;'}</tspan>`)
       .join('')}</text>`;
@@ -211,7 +354,7 @@ export const buildCardSvg = ({ side, data, settings, fontAssets = [] }: BuildCar
   <metadata>${metadata}</metadata>
   <defs>${defs}</defs>
   <rect width="${CARD_WIDTH}" height="${CARD_HEIGHT}" fill="${backgroundColor}" />
-  ${side.backgroundImage ? `<image href="${side.backgroundImage}" x="0" y="0" width="${CARD_WIDTH}" height="${CARD_HEIGHT}" preserveAspectRatio="none" />` : ''}
+  ${buildBackgroundMarkup(side.backgroundImage)}
   ${fieldsMarkup}
 </svg>`;
 };

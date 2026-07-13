@@ -1,8 +1,9 @@
 
-import React, { useCallback, useEffect, useLayoutEffect, useRef } from 'react';
+import React, { useCallback, useEffect, useLayoutEffect, useMemo, useRef } from 'react';
 import { CardData, FieldStyle, SideLayout, CMYK, ConditionalRule, AppSettings, FontAsset } from '../types';
 import { cmykToHex, hexToCmyk, normalizeCmyk } from '../utils/color';
 import { CARD_HEIGHT, CARD_WIDTH } from '../cardCanvas';
+import { buildCardSvg } from '../utils/vectorExport';
 
 interface BusinessCardPreviewProps {
   data: CardData;
@@ -73,6 +74,9 @@ const BusinessCardPreview = React.forwardRef<HTMLDivElement, BusinessCardPreview
 
   const resolvedBackgroundCmyk = normalizeCmyk(side.cmykBackgroundColor || hexToCmyk(side.backgroundColor) || { c: 0, m: 0, y: 0, k: 0 });
   const bgColor = cmykToHex(resolvedBackgroundCmyk) || side.backgroundColor || '#ffffff';
+  const svgMarkup = useMemo(() => buildCardSvg({ side, data, settings, fontAssets }), [data, fontAssets, settings, side]);
+  const svgDataUrl = useMemo(() => `data:image/svg+xml;charset=utf-8,${encodeURIComponent(svgMarkup)}`, [svgMarkup]);
+  const showHotspots = Boolean(onFieldClick || onFieldBoundsChange || selectedFieldKey);
 
   const fontStyleRef = useRef<HTMLStyleElement | null>(null);
   const containerRef = useRef<HTMLDivElement | null>(null);
@@ -153,9 +157,6 @@ const BusinessCardPreview = React.forwardRef<HTMLDivElement, BusinessCardPreview
     width: `${baseWidth}px`,
     height: `${baseHeight}px`,
     backgroundColor: bgColor,
-    backgroundImage: side.backgroundImage ? `url(${side.backgroundImage})` : 'none',
-    backgroundSize: '100% 100%',
-    backgroundRepeat: 'no-repeat',
     position: 'absolute',
     top: 0,
     left: 0,
@@ -275,7 +276,7 @@ const BusinessCardPreview = React.forwardRef<HTMLDivElement, BusinessCardPreview
       right: 'auto',
       paddingRight: '0',
       fontSize: `${styled.fontSize}px`,
-      color: textColor,
+      color: 'transparent',
       fontWeight: styled.fontWeight || '400',
       fontStyle: styled.fontStyle || 'normal',
       fontFamily: styled.fontFamily || 'Inter, sans-serif',
@@ -298,11 +299,12 @@ const BusinessCardPreview = React.forwardRef<HTMLDivElement, BusinessCardPreview
       opacity: styled.opacity !== undefined ? styled.opacity : 1,
       outline: isSelected ? '2px dashed #3b82f6' : 'none',
       outlineOffset: '2px',
-      backgroundColor: isSelected ? 'rgba(59, 130, 246, 0.1)' : (styled.backgroundColor || 'transparent'),
+      backgroundColor: isSelected ? 'rgba(59, 130, 246, 0.1)' : 'transparent',
       cursor: onFieldClick ? 'pointer' : 'inherit',
       zIndex: isSelected ? 100 : (styled.zIndex || 1),
       pointerEvents: onFieldClick ? 'auto' : 'none',
-      whiteSpace: 'pre-line'
+      whiteSpace: 'pre-line',
+      textShadow: 'none'
     };
 
     return (
@@ -345,6 +347,13 @@ const BusinessCardPreview = React.forwardRef<HTMLDivElement, BusinessCardPreview
           if (onFieldClick) onFieldClick('');
         }}
       >
+        <img
+          src={svgDataUrl}
+          alt="card preview"
+          className="absolute inset-0 h-full w-full pointer-events-none"
+          style={{ zIndex: 1 }}
+        />
+
         {showProof && (
           <div className="absolute inset-0 flex items-center justify-center rotate-[-35deg] pointer-events-none opacity-20 z-[1000] border-4 border-slate-300">
              <span className="text-6xl font-black uppercase tracking-widest text-slate-400 border-8 border-slate-300 px-8 py-2 rounded-2xl">Proof Only</span>
@@ -360,7 +369,7 @@ const BusinessCardPreview = React.forwardRef<HTMLDivElement, BusinessCardPreview
           />
         )}
         
-        {getOrderedFieldKeys(side).map((key) => renderDynamicField(key))}
+        {showHotspots ? getOrderedFieldKeys(side).map((key) => renderDynamicField(key)) : null}
       </div>
     </div>
   );

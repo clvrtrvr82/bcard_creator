@@ -1109,7 +1109,6 @@ const CustomizerScreen = ({ layout, onBack, onComplete, settings, productHandle,
       ...(layout.back ? [{ sideName: 'back' as const, sideLayout: layout.back }] : [])
     ];
     const pdf = new jsPDF({ orientation: 'landscape', unit: 'in', format: [PRINT_CARD_WIDTH_IN, PRINT_CARD_HEIGHT_IN], compress: true });
-    const registeredFonts = registerPdfFonts(pdf, layout.fontAssets || []);
 
     pdf.setProperties({
       title: `${layout.name} Print Ready`,
@@ -1124,8 +1123,7 @@ const CustomizerScreen = ({ layout, onBack, onComplete, settings, productHandle,
 
       const sideData = getRenderDataForSide(sides[index].sideName, data);
       const svg = buildCardSvg({ side: sides[index].sideLayout, data: sideData, settings, fontAssets: layout.fontAssets || [] });
-      await paintPrintPageBackground(pdf, sides[index].sideLayout);
-      overlaySvgTextForPrint(pdf, svg, registeredFonts);
+      await renderSvgToPdfPage(pdf, svg);
     }
 
     return pdf;
