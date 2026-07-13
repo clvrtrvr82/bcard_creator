@@ -60,7 +60,7 @@ const mergeSettings = (current: AppSettings, incoming?: Partial<AppSettings>): A
 });
 
 const hasRequiredSideMedia = (layout: Layout) => {
-  const frontHasTemplate = Boolean(layout.front.backgroundImage);
+  const frontHasTemplate = Boolean(layout.front.backgroundPdf || layout.front.backgroundImage);
   const frontHasPreview = Boolean(layout.front.previewImage || layout.previewImage);
   if (!frontHasTemplate || !frontHasPreview) {
     return {
@@ -70,7 +70,7 @@ const hasRequiredSideMedia = (layout: Layout) => {
   }
 
   if (layout.back) {
-    const backHasTemplate = Boolean(layout.back.backgroundImage);
+    const backHasTemplate = Boolean(layout.back.backgroundPdf || layout.back.backgroundImage);
     const backHasPreview = Boolean(layout.back.previewImage);
     if (!backHasTemplate || !backHasPreview) {
       return {

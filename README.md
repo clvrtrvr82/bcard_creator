@@ -129,6 +129,19 @@ curl http://127.0.0.1:3000/healthz
 
 If the server exits immediately, the first thing to verify is that `dist/index.html` exists. `server.js` will refuse to start without a built bundle.
 
+## Deploy on Render
+
+Recommended Render service settings for this repo:
+
+- Build Command: `npm install && npm run build`
+- Start Command: `npm start`
+
+Notes:
+
+- The print pipeline now requires `pdf-lib` and `@pdf-lib/fontkit` at runtime.
+- These are listed under `dependencies` (not `devDependencies`) and are already present in `package-lock.json`, so Render will install them during deploy.
+- If your Render service is pinned to an old lockfile cache, trigger a clear-cache redeploy once after pulling latest changes.
+
 ## Apache / Cloudways note
 
 This repo includes `.htaccess` for serving the built app from `dist/`. If Apache serves source files or returns a module MIME error, rebuild and redeploy the updated `dist/` output plus `.htaccess`.

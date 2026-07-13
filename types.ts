@@ -86,6 +86,8 @@ export interface SideLayout {
   cmykBackgroundColor?: CMYK;
   backgroundImage?: string;
   backgroundImageName?: string;
+  backgroundPdf?: string;
+  backgroundPdfName?: string;
   previewImage?: string;
   previewImageName?: string;
   templateOverlay?: string;

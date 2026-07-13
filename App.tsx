@@ -9,6 +9,8 @@ import AdminDashboard from './components/AdminDashboard';
 import html2canvas from 'html2canvas';
 import jsPDF from 'jspdf';
 import 'svg2pdf.js';
+import { PDFDocument, StandardFonts, cmyk as pdfCmyk, rgb as pdfRgb, PDFFont } from 'pdf-lib';
+import fontkit from '@pdf-lib/fontkit';
 import { cmykToHex, cmykToRgb, hexToCmyk, hexToRgb, normalizeCmyk, normalizeHex, normalizeRgb, rgbToCmyk } from './utils/color';
 import { pixelsToPoints } from './cardCanvas';
 import { buildCardSvg } from './utils/vectorExport';
@@ -512,6 +514,185 @@ interface SideFieldRef {
 const SIDE_AWARE_NATIVE_KEYS = new Set(['name', 'jobTitle', 'email', 'phone', 'mobile', 'addressLine1', 'website']);
 
 const toSideValueKey = (side: CardSide, key: string) => `${SIDE_VALUE_PREFIX}${side}:${key}`;
+
+interface SvgTextLine {
+  text: string;
+  topPx: number;
+}
+
+interface SvgTextRun {
+  xPx: number;
+  fontSizePx: number;
+  fontFamily: string;
+  fontWeight: string;
+  fontStyle: string;
+  anchor: 'left' | 'center' | 'right';
+  cmyk: CMYK | null;
+  rgbHex?: string;
+  lines: SvgTextLine[];
+}
+
+const normalizeUploadedFontName = (name: string) => name.replace(/[^a-zA-Z0-9 _-]/g, '').trim().toLowerCase();
+
+const dataUrlToBytes = (dataUrl: string): Uint8Array => {
+  const base64 = dataUrl.split(',')[1] || '';
+  const binary = window.atob(base64);
+  const bytes = new Uint8Array(binary.length);
+  for (let index = 0; index < binary.length; index += 1) {
+    bytes[index] = binary.charCodeAt(index);
+  }
+  return bytes;
+};
+
+const bytesToBase64 = (bytes: Uint8Array) => {
+  const chunkSize = 0x8000;
+  let binary = '';
+  for (let offset = 0; offset < bytes.length; offset += chunkSize) {
+    const chunk = bytes.subarray(offset, offset + chunkSize);
+    binary += String.fromCharCode(...chunk);
+  }
+  return window.btoa(binary);
+};
+
+const extractSvgTextRuns = (svgMarkup: string): SvgTextRun[] => {
+  const parser = new DOMParser();
+  const parsed = parser.parseFromString(svgMarkup, 'image/svg+xml');
+  const textElements = Array.from(parsed.querySelectorAll('text'));
+
+  return textElements.map((textElement) => {
+    const style = parseCssStyleString(textElement.getAttribute('style'));
+    const xPx = Number(textElement.getAttribute('x') || '0');
+    const yPx = Number(textElement.getAttribute('y') || '0');
+    const fontSizePx = Number((style['font-size'] || '16').replace(/px/i, '').trim()) || 16;
+    const lineHeightPx = fontSizePx * 1.25;
+    const anchorRaw = (style['text-anchor'] || 'start').toLowerCase();
+    const anchor = anchorRaw === 'middle' ? 'center' : anchorRaw === 'end' ? 'right' : 'left';
+    const cmyk = parsePrintCmykLabel(textElement.getAttribute('data-print-cmyk')) || hexToCmyk(style.fill || undefined);
+
+    const tspans = Array.from(textElement.querySelectorAll('tspan'));
+    const lines: SvgTextLine[] = [];
+    if (!tspans.length) {
+      lines.push({ text: textElement.textContent || ' ', topPx: yPx });
+    } else {
+      let currentTop = yPx;
+      tspans.forEach((tspan, index) => {
+        const dy = Number(tspan.getAttribute('dy') || (index === 0 ? '0' : `${lineHeightPx}`));
+        if (index > 0) currentTop += dy;
+        lines.push({ text: tspan.textContent || ' ', topPx: currentTop });
+      });
+    }
+
+    return {
+      xPx,
+      fontSizePx,
+      fontFamily: style['font-family'] || 'helvetica',
+      fontWeight: style['font-weight'] || '400',
+      fontStyle: style['font-style'] || 'normal',
+      anchor,
+      cmyk,
+      rgbHex: style.fill,
+      lines
+    };
+  });
+};
+
+const resolvePdfLibFont = async (
+  pdfDoc: PDFDocument,
+  fontMap: Map<string, PDFFont>,
+  fontFamilyRaw: string,
+  fontWeightRaw: string,
+  fontStyleRaw: string
+) => {
+  const normalizedFamily = normalizeFontFamilyKey(fontFamilyRaw || '');
+  const uploaded = fontMap.get(normalizedFamily);
+  if (uploaded) return uploaded;
+
+  const isSerif = normalizedFamily.includes('serif') || normalizedFamily.includes('playfair') || normalizedFamily.includes('georgia');
+  const numericWeight = Number(fontWeightRaw || '400');
+  const isBold = Number.isFinite(numericWeight) ? numericWeight >= 700 : /bold|black|heavy|semibold/i.test(fontWeightRaw || '');
+  const isItalic = (fontStyleRaw || '').toLowerCase().includes('italic');
+
+  if (isSerif) {
+    if (isBold && isItalic) return pdfDoc.embedFont(StandardFonts.TimesRomanBoldItalic);
+    if (isBold) return pdfDoc.embedFont(StandardFonts.TimesRomanBold);
+    if (isItalic) return pdfDoc.embedFont(StandardFonts.TimesRomanItalic);
+    return pdfDoc.embedFont(StandardFonts.TimesRoman);
+  }
+
+  if (isBold && isItalic) return pdfDoc.embedFont(StandardFonts.HelveticaBoldOblique);
+  if (isBold) return pdfDoc.embedFont(StandardFonts.HelveticaBold);
+  if (isItalic) return pdfDoc.embedFont(StandardFonts.HelveticaOblique);
+  return pdfDoc.embedFont(StandardFonts.Helvetica);
+};
+
+const drawSvgTextRunsOnPdfPage = async (
+  pdfDoc: PDFDocument,
+  page: any,
+  runs: SvgTextRun[],
+  fontMap: Map<string, PDFFont>,
+  pageWidth: number,
+  pageHeight: number
+) => {
+  const scaleX = pageWidth / CARD_WIDTH;
+  const scaleY = pageHeight / CARD_HEIGHT;
+
+  for (const run of runs) {
+    const font = await resolvePdfLibFont(pdfDoc, fontMap, run.fontFamily, run.fontWeight, run.fontStyle);
+    const fontSizePt = run.fontSizePx * scaleY;
+
+    for (const line of run.lines) {
+      const text = line.text || ' ';
+      const width = font.widthOfTextAtSize(text, fontSizePt);
+      const anchorX = run.xPx * scaleX;
+      const x = run.anchor === 'center' ? anchorX - width / 2 : run.anchor === 'right' ? anchorX - width : anchorX;
+      const y = pageHeight - ((line.topPx * scaleY) + fontSizePt);
+
+      const color = run.cmyk
+        ? pdfCmyk(run.cmyk.c / 100, run.cmyk.m / 100, run.cmyk.y / 100, run.cmyk.k / 100)
+        : (() => {
+            const rgb = hexToRgb(run.rgbHex);
+            if (!rgb) return undefined;
+            return pdfRgb(rgb.r / 255, rgb.g / 255, rgb.b / 255);
+          })();
+
+      page.drawText(text, {
+        x,
+        y,
+        size: fontSizePt,
+        font,
+        color
+      });
+    }
+  }
+};
+
+const registerEmbeddedPrintFonts = async (pdfDoc: PDFDocument, fontAssets: FontAsset[]) => {
+  const fontMap = new Map<string, PDFFont>();
+  pdfDoc.registerFontkit(fontkit);
+
+  for (const asset of fontAssets) {
+    if (!asset?.name || !asset?.dataUrl) continue;
+    if (!['truetype', 'opentype'].includes(asset.format)) continue;
+
+    try {
+      const fontBytes = dataUrlToBytes(asset.dataUrl);
+      const embedded = await pdfDoc.embedFont(fontBytes, { subset: false });
+      const normalizedUploadedName = normalizeUploadedFontName(asset.name);
+      fontMap.set(normalizedUploadedName, embedded);
+      fontMap.set(normalizeFontFamilyKey(asset.name), embedded);
+    } catch (error) {
+      console.warn('Unable to embed uploaded font in print PDF', asset.name, error);
+    }
+  }
+
+  return fontMap;
+};
+
+const getSideTemplatePdfDataUrl = (side: SideLayout): string | null => {
+  if (side.backgroundPdf?.startsWith('data:application/pdf')) return side.backgroundPdf;
+  if (side.backgroundImage?.startsWith('data:application/pdf')) return side.backgroundImage;
+  return null;
+};
 
 const pxToPrintPt = (px: number) => (px * 72) / 300;
 const pxToIn = (px: number) => px / 300;
@@ -1103,30 +1284,49 @@ const CustomizerScreen = ({ layout, onBack, onComplete, settings, productHandle,
     });
   };
 
-  const createPrintReadyPdf = async () => {
+  const createPrintReadyPdf = async (): Promise<Uint8Array> => {
     const sides: Array<{ sideName: CardSide; sideLayout: SideLayout }> = [
       { sideName: 'front', sideLayout: layout.front },
       ...(layout.back ? [{ sideName: 'back' as const, sideLayout: layout.back }] : [])
     ];
-    const pdf = new jsPDF({ orientation: 'landscape', unit: 'in', format: [PRINT_CARD_WIDTH_IN, PRINT_CARD_HEIGHT_IN], compress: true });
-
-    pdf.setProperties({
-      title: `${layout.name} Print Ready`,
-      subject: 'Print-ready PDF generated from CMYK-normalized artwork',
-      creator: 'Theme Vault Designer'
-    });
+    const pdfDoc = await PDFDocument.create();
+    pdfDoc.setTitle(`${layout.name} Print Ready`);
+    pdfDoc.setSubject('Print-ready PDF generated with PDF templates and embedded fonts');
+    pdfDoc.setCreator('Theme Vault Designer');
+    const embeddedFonts = await registerEmbeddedPrintFonts(pdfDoc, layout.fontAssets || []);
 
     for (let index = 0; index < sides.length; index += 1) {
-      if (index > 0) {
-        pdf.addPage([PRINT_CARD_WIDTH_IN, PRINT_CARD_HEIGHT_IN], 'landscape');
+      const templatePdfDataUrl = getSideTemplatePdfDataUrl(sides[index].sideLayout);
+      if (!templatePdfDataUrl) {
+        throw new Error(`Missing ${sides[index].sideName} print template PDF. Upload a PDF template before approving.`);
       }
 
+      const templateBytes = dataUrlToBytes(templatePdfDataUrl);
+      const [embeddedTemplatePage] = await pdfDoc.embedPdf(templateBytes, [0]);
+      const page = pdfDoc.addPage([embeddedTemplatePage.width, embeddedTemplatePage.height]);
+      page.drawPage(embeddedTemplatePage, {
+        x: 0,
+        y: 0,
+        width: embeddedTemplatePage.width,
+        height: embeddedTemplatePage.height
+      });
+
       const sideData = getRenderDataForSide(sides[index].sideName, data);
-      const svg = buildCardSvg({ side: sides[index].sideLayout, data: sideData, settings, fontAssets: layout.fontAssets || [] });
-      await renderSvgToPdfPage(pdf, svg);
+      const svg = buildCardSvg({
+        side: {
+          ...sides[index].sideLayout,
+          // Text is drawn natively in PDF; avoid re-rendering template images in SVG.
+          backgroundImage: undefined
+        },
+        data: sideData,
+        settings,
+        fontAssets: layout.fontAssets || []
+      });
+      const textRuns = extractSvgTextRuns(svg);
+      await drawSvgTextRunsOnPdfPage(pdfDoc, page, textRuns, embeddedFonts, embeddedTemplatePage.width, embeddedTemplatePage.height);
     }
 
-    return pdf;
+    return pdfDoc.save();
   };
 
   const downloadCanvasImage = (canvas: HTMLCanvasElement, fileName: string, quality = 0.82) => {
@@ -1189,9 +1389,8 @@ const CustomizerScreen = ({ layout, onBack, onComplete, settings, productHandle,
 
   const uploadPrintReadyPdf = async (): Promise<{ reference: string | null; proofUrl: string | null }> => {
     try {
-      const pdf = await createPrintReadyPdf();
-      const dataUri = pdf.output('datauristring');
-      const base64 = dataUri.split(',')[1];
+      const pdfBytes = await createPrintReadyPdf();
+      const base64 = bytesToBase64(pdfBytes);
       const response = await fetch('/api/proofs', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },

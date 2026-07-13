@@ -683,14 +683,22 @@ const LayoutEditor: React.FC<LayoutEditorProps> = ({ layout, onChange, settings,
 
   const handleBackgroundUpload = (side: 'front' | 'back', file?: File) => {
     if (!file) return;
+    const isPdf = file.type === 'application/pdf' || file.name.toLowerCase().endsWith('.pdf');
+    if (!isPdf) {
+      pushError('Print templates must be uploaded as PDF files.');
+      return;
+    }
     const inputRef = side === 'back' ? backTemplateInputRef : frontTemplateInputRef;
     const reader = new FileReader();
     reader.onload = () => {
       commitLayout((draft) => {
         const targetSide = side === 'back' ? draft.back ?? draft.front : draft.front;
         if (!targetSide) return;
-        targetSide.backgroundImage = reader.result as string;
-        targetSide.backgroundImageName = file.name;
+        targetSide.backgroundPdf = reader.result as string;
+        targetSide.backgroundPdfName = file.name;
+        // Clear legacy image template when a PDF template is uploaded.
+        delete targetSide.backgroundImage;
+        delete targetSide.backgroundImageName;
       });
       if (inputRef.current) inputRef.current.value = '';
     };
@@ -704,6 +712,8 @@ const LayoutEditor: React.FC<LayoutEditorProps> = ({ layout, onChange, settings,
       if (!targetSide) return;
       delete targetSide.backgroundImage;
       delete targetSide.backgroundImageName;
+      delete targetSide.backgroundPdf;
+      delete targetSide.backgroundPdfName;
     });
     if (inputRef.current) inputRef.current.value = '';
   };
@@ -879,10 +889,10 @@ const LayoutEditor: React.FC<LayoutEditorProps> = ({ layout, onChange, settings,
   const backPreviewImage = layout.back?.previewImage;
   const backPreviewImageName = layout.back?.previewImageName || 'Back preview image';
   const activeSidePreviewImage = activeSide === 'back' ? backPreviewImage : frontPreviewImage;
-  const frontTemplateReady = Boolean(layout.front.backgroundImage);
+  const frontTemplateReady = Boolean(layout.front.backgroundPdf || layout.front.backgroundImage);
   const frontPreviewReady = Boolean(frontPreviewImage);
   const backEnabled = Boolean(layout.back);
-  const backTemplateReady = Boolean(layout.back?.backgroundImage);
+  const backTemplateReady = Boolean(layout.back?.backgroundPdf || layout.back?.backgroundImage);
   const backPreviewReady = Boolean(layout.back?.previewImage);
   const mediaReady = frontTemplateReady
     && frontPreviewReady
@@ -1474,7 +1484,7 @@ const LayoutEditor: React.FC<LayoutEditorProps> = ({ layout, onChange, settings,
         </div>
 
         <div className="rounded-2xl border border-amber-100 bg-amber-50 px-3 py-2.5 text-[11px] text-amber-700 space-y-1">
-          <p><span className="font-black uppercase tracking-[0.2em]">Template spec:</span> 1050 &times; 600 px at 300 dpi (3.5&quot; &times; 2&quot;). SVG or PNG. Keep artwork inside the safe area.</p>
+          <p><span className="font-black uppercase tracking-[0.2em]">Template spec:</span> Upload a print-ready PDF template (vector preferred) sized to your production card specs.</p>
           <p><span className="font-black uppercase tracking-[0.2em]">Preview/overlay spec:</span> Same 3.5:2 ratio. Lighter file is fine — it only loads in this editor, never in the customer proof.</p>
         </div>
 
@@ -1487,18 +1497,18 @@ const LayoutEditor: React.FC<LayoutEditorProps> = ({ layout, onChange, settings,
               <p className="text-xs font-black uppercase tracking-[0.25em] text-slate-500">Print Template</p>
             </div>
             <p className="text-[11px] text-slate-500">The artwork printed behind all front-side text fields. Upload the same file you send to the printer.</p>
-            {layout.front.backgroundImage ? (
+            {(layout.front.backgroundPdf || layout.front.backgroundImage) ? (
               <div className="flex flex-wrap items-center justify-between gap-3 rounded-xl border border-slate-200 bg-white px-3 py-2.5 text-xs">
                 <div className="flex items-center gap-2 min-w-0">
                   <ImageIcon size={13} className="shrink-0 text-slate-400" />
-                  <span className="truncate font-semibold text-slate-800">{layout.front.backgroundImageName || 'Front template'}</span>
+                  <span className="truncate font-semibold text-slate-800">{layout.front.backgroundPdfName || layout.front.backgroundImageName || 'Front template PDF'}</span>
                 </div>
                 <button type="button" onClick={() => handleRemoveBackgroundImage('front')} className="shrink-0 rounded-lg border border-red-200 bg-white px-3 py-1.5 text-[11px] font-semibold text-red-600">Remove</button>
               </div>
             ) : (
               <label className="flex flex-col gap-1.5">
-                <input ref={frontTemplateInputRef} type="file" accept="image/*,.svg" onChange={(e) => handleBackgroundUpload('front', e.target.files?.[0])} className="block w-full text-[11px]" />
-                <span className="text-[11px] text-slate-400">SVG or PNG, 1050 &times; 600 px</span>
+                <input ref={frontTemplateInputRef} type="file" accept="application/pdf,.pdf" onChange={(e) => handleBackgroundUpload('front', e.target.files?.[0])} className="block w-full text-[11px]" />
+                <span className="text-[11px] text-slate-400">Upload PDF template only.</span>
               </label>
             )}
           </div>
@@ -1514,18 +1524,18 @@ const LayoutEditor: React.FC<LayoutEditorProps> = ({ layout, onChange, settings,
             ) : (
               <>
                 <p className="text-[11px] text-slate-500">The artwork printed behind all back-side text fields.</p>
-                {layout.back.backgroundImage ? (
+                {(layout.back.backgroundPdf || layout.back.backgroundImage) ? (
                   <div className="flex flex-wrap items-center justify-between gap-3 rounded-xl border border-slate-200 bg-white px-3 py-2.5 text-xs">
                     <div className="flex items-center gap-2 min-w-0">
                       <ImageIcon size={13} className="shrink-0 text-slate-400" />
-                      <span className="truncate font-semibold text-slate-800">{layout.back.backgroundImageName || 'Back template'}</span>
+                      <span className="truncate font-semibold text-slate-800">{layout.back.backgroundPdfName || layout.back.backgroundImageName || 'Back template PDF'}</span>
                     </div>
                     <button type="button" onClick={() => handleRemoveBackgroundImage('back')} className="shrink-0 rounded-lg border border-red-200 bg-white px-3 py-1.5 text-[11px] font-semibold text-red-600">Remove</button>
                   </div>
                 ) : (
                   <label className="flex flex-col gap-1.5">
-                    <input ref={backTemplateInputRef} type="file" accept="image/*,.svg" onChange={(e) => handleBackgroundUpload('back', e.target.files?.[0])} className="block w-full text-[11px]" />
-                    <span className="text-[11px] text-slate-400">SVG or PNG, 1050 &times; 600 px</span>
+                    <input ref={backTemplateInputRef} type="file" accept="application/pdf,.pdf" onChange={(e) => handleBackgroundUpload('back', e.target.files?.[0])} className="block w-full text-[11px]" />
+                    <span className="text-[11px] text-slate-400">Upload PDF template only.</span>
                   </label>
                 )}
               </>
