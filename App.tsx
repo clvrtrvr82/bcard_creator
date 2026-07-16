@@ -557,9 +557,20 @@ const bytesToBase64 = (bytes: Uint8Array) => {
 const extractSvgTextRuns = (svgMarkup: string): SvgTextRun[] => {
   const parser = new DOMParser();
   const parsed = parser.parseFromString(svgMarkup, 'image/svg+xml');
-  const textElements = Array.from(parsed.querySelectorAll('text'));
+  
+  // Handle <g> wrappers from buildCardSvg and look for text inside
+  const groupElements = Array.from(parsed.querySelectorAll('g[data-field-key]'));
+  const directTextElements = Array.from(parsed.querySelectorAll('svg > text'));
+  const textElements = [
+    ...directTextElements,
+    ...groupElements.flatMap(g => Array.from(g.querySelectorAll('text')))
+  ].filter((el, idx, arr) => arr.indexOf(el) === idx); // dedup
 
-  return textElements.map((textElement) => {
+  console.log(`[extractSvgTextRuns] Found ${textElements.length} text elements in SVG (${directTextElements.length} direct, ${groupElements.length} groups)`);
+
+  const runs: SvgTextRun[] = [];
+
+  textElements.forEach((textElement, idx) => {
     const style = parseCssStyleString(textElement.getAttribute('style'));
     const xPx = Number(textElement.getAttribute('x') || '0');
     const yPx = Number(textElement.getAttribute('y') || '0');
@@ -571,29 +582,54 @@ const extractSvgTextRuns = (svgMarkup: string): SvgTextRun[] => {
 
     const tspans = Array.from(textElement.querySelectorAll('tspan'));
     const lines: SvgTextLine[] = [];
+
     if (!tspans.length) {
-      lines.push({ text: textElement.textContent || ' ', topPx: yPx });
+      const directText = Array.from(textElement.childNodes)
+        .filter((node) => node.nodeType === Node.TEXT_NODE && (node.textContent || '').trim())
+        .map((node) => (node.textContent || '').trim())
+        .filter(Boolean)
+        .join('');
+
+      if (directText) {
+        lines.push({ text: directText, topPx: yPx });
+      }
+
+      if (!lines.length && textElement.textContent?.trim()) {
+        lines.push({ text: textElement.textContent.trim(), topPx: yPx });
+      }
     } else {
       let currentTop = yPx;
-      tspans.forEach((tspan, index) => {
-        const dy = Number(tspan.getAttribute('dy') || (index === 0 ? '0' : `${lineHeightPx}`));
-        if (index > 0) currentTop += dy;
-        lines.push({ text: tspan.textContent || ' ', topPx: currentTop });
+      tspans.forEach((tspan, tidx) => {
+        const dyAttr = tspan.getAttribute('dy');
+        const dy = dyAttr ? Number(dyAttr) : (tidx === 0 ? 0 : lineHeightPx);
+        if (tidx > 0) currentTop += dy;
+        const tspanText = (tspan.textContent || '').trim();
+        if (tspanText) {
+          lines.push({ text: tspanText, topPx: currentTop });
+        }
       });
     }
 
-    return {
-      xPx,
-      fontSizePx,
-      fontFamily: style['font-family'] || 'helvetica',
-      fontWeight: style['font-weight'] || '400',
-      fontStyle: style['font-style'] || 'normal',
-      anchor,
-      cmyk,
-      rgbHex: style.fill,
-      lines
-    };
+    if (lines.length) {
+      const textPreview = lines.map(l => l.text).join(' ');
+      console.log(`  [text ${idx}] "${textPreview}" @ x=${xPx} y=${yPx} font=${style['font-family']||'inherit'} size=${fontSizePx}px anchor=${anchor} cmyk=${cmyk ? `C${cmyk.c}M${cmyk.m}Y${cmyk.y}K${cmyk.k}` : 'none'}`);
+      runs.push({
+        xPx,
+        fontSizePx,
+        fontFamily: style['font-family'] || 'helvetica',
+        fontWeight: style['font-weight'] || '400',
+        fontStyle: style['font-style'] || 'normal',
+        anchor,
+        cmyk,
+        rgbHex: style.fill,
+        lines
+      });
+    }
   });
+
+  console.log(`[extractSvgTextRuns] Extracted ${runs.length} text runs from ${textElements.length} text elements`);
+
+  return runs;
 };
 
 const resolvePdfLibFont = async (
@@ -636,9 +672,13 @@ const drawSvgTextRunsOnPdfPage = async (
   const scaleX = pageWidth / CARD_WIDTH;
   const scaleY = pageHeight / CARD_HEIGHT;
 
+  console.log(`[drawSvgTextRunsOnPdfPage] Drawing ${runs.length} text runs on page (${pageWidth}x${pageHeight}px, scale ${scaleX}x${scaleY})`);
+
   for (const run of runs) {
     const font = await resolvePdfLibFont(pdfDoc, fontMap, run.fontFamily, run.fontWeight, run.fontStyle);
     const fontSizePt = run.fontSizePx * scaleY;
+
+    console.log(`  [run] font="${run.fontFamily}" size=${fontSizePt.toFixed(1)}pt x=${run.xPx} anchor=${run.anchor}`);
 
     for (const line of run.lines) {
       const text = line.text || ' ';
@@ -655,6 +695,8 @@ const drawSvgTextRunsOnPdfPage = async (
             return pdfRgb(rgb.r / 255, rgb.g / 255, rgb.b / 255);
           })();
 
+      console.log(`    [line] "${text.substring(0, 30)}" @ pdf=(${x.toFixed(1)}, ${y.toFixed(1)}) color=${run.cmyk ? `cmyk` : run.rgbHex || 'default'}`);
+
       page.drawText(text, {
         x,
         y,
@@ -664,6 +706,8 @@ const drawSvgTextRunsOnPdfPage = async (
       });
     }
   }
+
+  console.log(`[drawSvgTextRunsOnPdfPage] Completed drawing ${runs.length} text runs`);
 };
 
 const registerEmbeddedPrintFonts = async (pdfDoc: PDFDocument, fontAssets: FontAsset[]) => {
