@@ -566,7 +566,7 @@ const extractSvgTextRuns = (svgMarkup: string): SvgTextRun[] => {
     ...groupElements.flatMap(g => Array.from(g.querySelectorAll('text')))
   ].filter((el, idx, arr) => arr.indexOf(el) === idx); // dedup
 
-  console.log(`[extractSvgTextRuns] Found ${textElements.length} text elements in SVG (${directTextElements.length} direct, ${groupElements.length} groups)`);
+  console.group(`%c[extractSvgTextRuns] Found ${textElements.length} text elements`, 'color: #10b981; font-weight: bold');
 
   const runs: SvgTextRun[] = [];
 
@@ -611,8 +611,14 @@ const extractSvgTextRuns = (svgMarkup: string): SvgTextRun[] => {
     }
 
     if (lines.length) {
-      const textPreview = lines.map(l => l.text).join(' ');
-      console.log(`  [text ${idx}] "${textPreview}" @ x=${xPx} y=${yPx} font=${style['font-family']||'inherit'} size=${fontSizePx}px anchor=${anchor} cmyk=${cmyk ? `C${cmyk.c}M${cmyk.m}Y${cmyk.y}K${cmyk.k}` : 'none'}`);
+      const textPreview = lines.map(l => l.text).join(' | ');
+      console.log(`  "${textPreview}"`, {
+        pos: `(${xPx}, ${yPx})`,
+        font: `${style['font-family'] || 'inherit'}`,
+        size: `${fontSizePx}px`,
+        anchor,
+        cmyk: cmyk ? `C${cmyk.c}M${cmyk.m}Y${cmyk.y}K${cmyk.k}` : 'none'
+      });
       runs.push({
         xPx,
         fontSizePx,
@@ -627,7 +633,8 @@ const extractSvgTextRuns = (svgMarkup: string): SvgTextRun[] => {
     }
   });
 
-  console.log(`[extractSvgTextRuns] Extracted ${runs.length} text runs from ${textElements.length} text elements`);
+  console.log(`✓ Extracted ${runs.length}/${textElements.length} text runs`);
+  console.groupEnd();
 
   return runs;
 };
@@ -1339,6 +1346,7 @@ const CustomizerScreen = ({ layout, onBack, onComplete, settings, productHandle,
     pdfDoc.setCreator('Theme Vault Designer');
     const embeddedFonts = await registerEmbeddedPrintFonts(pdfDoc, layout.fontAssets || []);
 
+    console.group(`%c[createPrintReadyPdf] ${layout.name}`, 'color: #2563eb; font-weight: bold');
     for (let index = 0; index < sides.length; index += 1) {
       const templatePdfDataUrl = getSideTemplatePdfDataUrl(sides[index].sideLayout);
       if (!templatePdfDataUrl) {
@@ -1366,9 +1374,11 @@ const CustomizerScreen = ({ layout, onBack, onComplete, settings, productHandle,
         settings,
         fontAssets: layout.fontAssets || []
       });
+      console.log(`Generated SVG for ${sides[index].sideName} side:`, svg.substring(0, 300) + '...');
       const textRuns = extractSvgTextRuns(svg);
       await drawSvgTextRunsOnPdfPage(pdfDoc, page, textRuns, embeddedFonts, embeddedTemplatePage.width, embeddedTemplatePage.height);
     }
+    console.groupEnd();
 
     return pdfDoc.save();
   };
