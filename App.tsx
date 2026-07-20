@@ -1372,7 +1372,8 @@ const CustomizerScreen = ({ layout, onBack, onComplete, settings, productHandle,
         },
         data: sideData,
         settings,
-        fontAssets: layout.fontAssets || []
+        fontAssets: layout.fontAssets || [],
+        preserveTextNodes: true
       });
       console.log(`Generated SVG for ${sides[index].sideName} side:`, svg.substring(0, 300) + '...');
       const textRuns = extractSvgTextRuns(svg);

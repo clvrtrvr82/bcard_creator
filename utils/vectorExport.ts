@@ -8,6 +8,7 @@ interface BuildCardSvgOptions {
   data: CardData;
   settings?: AppSettings;
   fontAssets?: FontAsset[];
+  preserveTextNodes?: boolean;
 }
 
 const escapeXml = (value: string) => value
@@ -257,7 +258,7 @@ const getOrderedFieldKeys = (side: SideLayout) => {
   return [...stableDeclared, ...missingKeys];
 };
 
-export const buildCardSvg = ({ side, data, settings, fontAssets = [] }: BuildCardSvgOptions) => {
+export const buildCardSvg = ({ side, data, settings, fontAssets = [], preserveTextNodes = false }: BuildCardSvgOptions) => {
   const resolvedBackgroundCmyk = normalizeCmyk(side.cmykBackgroundColor || hexToCmyk(side.backgroundColor) || { c: 0, m: 0, y: 0, k: 0 });
   const backgroundColor = cmykToHex(resolvedBackgroundCmyk) || side.backgroundColor || '#ffffff';
   const orderedKeys = getOrderedFieldKeys(side);
@@ -312,7 +313,7 @@ export const buildCardSvg = ({ side, data, settings, fontAssets = [] }: BuildCar
       ? `<rect x="${xBase}" y="${styled.top}" width="${styled.width ?? clipWidth}" height="${textHeight}" fill="${styled.backgroundColor}" opacity="${styled.opacity ?? 1}" />`
       : '';
 
-    const outlinedText = buildOutlinedTextMarkup({
+    const outlinedText = preserveTextNodes ? null : buildOutlinedTextMarkup({
       content,
       fontFamily: styled.fontFamily || 'Inter, sans-serif',
       fontSize: styled.fontSize,
