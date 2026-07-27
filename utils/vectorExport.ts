@@ -23,7 +23,9 @@ const fontCache = new Map<string, opentype.Font | null>();
 
 const normalizeFontFamilyKey = (fontFamily: string) => {
   const primary = fontFamily.split(',')[0] || fontFamily;
-  return primary.replace(/["']/g, '').trim().toLowerCase();
+  const cleaned = primary.replace(/["']/g, '').trim();
+  const canonical = cleaned.replace(/(?:[_-])\d{3,}$/g, '').trim();
+  return canonical.toLowerCase();
 };
 
 const decodeDataUrlPayload = (dataUrl: string) => {
@@ -245,7 +247,8 @@ const buildFontFaceCss = (fontAssets: FontAsset[]) => {
   }, []);
 
   return uniqueAssets.map((asset) => {
-    const safeName = asset.name.replace(/[^a-zA-Z0-9 _-]/g, '').trim() || 'UploadedFont';
+    const safeNameRaw = asset.name.replace(/[^a-zA-Z0-9 _-]/g, '').trim();
+    const safeName = safeNameRaw.replace(/(?:[_-])\d{3,}$/g, '').trim() || 'UploadedFont';
     return `@font-face { font-family: '${safeName}'; src: url(${asset.dataUrl}) format('${asset.format}'); font-display: swap; font-weight: 100 900; font-style: normal italic; }`;
   }).join('\n');
 };

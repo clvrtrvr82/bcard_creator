@@ -532,7 +532,11 @@ interface SvgTextRun {
   lines: SvgTextLine[];
 }
 
-const normalizeUploadedFontName = (name: string) => name.replace(/[^a-zA-Z0-9 _-]/g, '').trim().toLowerCase();
+const normalizeUploadedFontName = (name: string) => {
+  const cleaned = name.replace(/[^a-zA-Z0-9 _-]/g, '').trim();
+  const canonical = cleaned.replace(/(?:[_-])\d{3,}$/g, '').trim();
+  return canonical.toLowerCase();
+};
 
 const dataUrlToBytes = (dataUrl: string): Uint8Array => {
   const base64 = dataUrl.split(',')[1] || '';
@@ -566,11 +570,9 @@ const extractSvgTextRuns = (svgMarkup: string): SvgTextRun[] => {
     ...groupElements.flatMap(g => Array.from(g.querySelectorAll('text')))
   ].filter((el, idx, arr) => arr.indexOf(el) === idx); // dedup
 
-  console.group(`%c[extractSvgTextRuns] Found ${textElements.length} text elements`, 'color: #10b981; font-weight: bold');
-
   const runs: SvgTextRun[] = [];
 
-  textElements.forEach((textElement, idx) => {
+  textElements.forEach((textElement) => {
     const style = parseCssStyleString(textElement.getAttribute('style'));
     const xPx = Number(textElement.getAttribute('x') || '0');
     const yPx = Number(textElement.getAttribute('y') || '0');
@@ -611,14 +613,6 @@ const extractSvgTextRuns = (svgMarkup: string): SvgTextRun[] => {
     }
 
     if (lines.length) {
-      const textPreview = lines.map(l => l.text).join(' | ');
-      console.log(`  "${textPreview}"`, {
-        pos: `(${xPx}, ${yPx})`,
-        font: `${style['font-family'] || 'inherit'}`,
-        size: `${fontSizePx}px`,
-        anchor,
-        cmyk: cmyk ? `C${cmyk.c}M${cmyk.m}Y${cmyk.y}K${cmyk.k}` : 'none'
-      });
       runs.push({
         xPx,
         fontSizePx,
@@ -632,9 +626,6 @@ const extractSvgTextRuns = (svgMarkup: string): SvgTextRun[] => {
       });
     }
   });
-
-  console.log(`✓ Extracted ${runs.length}/${textElements.length} text runs`);
-  console.groupEnd();
 
   return runs;
 };
@@ -679,13 +670,9 @@ const drawSvgTextRunsOnPdfPage = async (
   const scaleX = pageWidth / CARD_WIDTH;
   const scaleY = pageHeight / CARD_HEIGHT;
 
-  console.log(`[drawSvgTextRunsOnPdfPage] Drawing ${runs.length} text runs on page (${pageWidth}x${pageHeight}px, scale ${scaleX}x${scaleY})`);
-
   for (const run of runs) {
     const font = await resolvePdfLibFont(pdfDoc, fontMap, run.fontFamily, run.fontWeight, run.fontStyle);
     const fontSizePt = run.fontSizePx * scaleY;
-
-    console.log(`  [run] font="${run.fontFamily}" size=${fontSizePt.toFixed(1)}pt x=${run.xPx} anchor=${run.anchor}`);
 
     for (const line of run.lines) {
       const text = line.text || ' ';
@@ -702,8 +689,6 @@ const drawSvgTextRunsOnPdfPage = async (
             return pdfRgb(rgb.r / 255, rgb.g / 255, rgb.b / 255);
           })();
 
-      console.log(`    [line] "${text.substring(0, 30)}" @ pdf=(${x.toFixed(1)}, ${y.toFixed(1)}) color=${run.cmyk ? `cmyk` : run.rgbHex || 'default'}`);
-
       page.drawText(text, {
         x,
         y,
@@ -713,8 +698,6 @@ const drawSvgTextRunsOnPdfPage = async (
       });
     }
   }
-
-  console.log(`[drawSvgTextRunsOnPdfPage] Completed drawing ${runs.length} text runs`);
 };
 
 const registerEmbeddedPrintFonts = async (pdfDoc: PDFDocument, fontAssets: FontAsset[]) => {
@@ -778,7 +761,9 @@ const parsePrintCmykLabel = (label?: string | null): CMYK | null => {
 
 const normalizeFontFamilyKey = (fontFamily: string) => {
   const primary = fontFamily.split(',')[0] || fontFamily;
-  return primary.replace(/['"]/g, '').trim().toLowerCase();
+  const cleaned = primary.replace(/['"]/g, '').trim();
+  const canonical = cleaned.replace(/(?:[_-])\d{3,}$/g, '').trim();
+  return canonical.toLowerCase();
 };
 
 const registerPdfFonts = (pdf: jsPDF, fontAssets: FontAsset[]) => {
@@ -1346,7 +1331,6 @@ const CustomizerScreen = ({ layout, onBack, onComplete, settings, productHandle,
     pdfDoc.setCreator('Theme Vault Designer');
     const embeddedFonts = await registerEmbeddedPrintFonts(pdfDoc, layout.fontAssets || []);
 
-    console.group(`%c[createPrintReadyPdf] ${layout.name}`, 'color: #2563eb; font-weight: bold');
     for (let index = 0; index < sides.length; index += 1) {
       const templatePdfDataUrl = getSideTemplatePdfDataUrl(sides[index].sideLayout);
       if (!templatePdfDataUrl) {
@@ -1375,11 +1359,9 @@ const CustomizerScreen = ({ layout, onBack, onComplete, settings, productHandle,
         fontAssets: layout.fontAssets || [],
         preserveTextNodes: true
       });
-      console.log(`Generated SVG for ${sides[index].sideName} side:`, svg.substring(0, 300) + '...');
       const textRuns = extractSvgTextRuns(svg);
       await drawSvgTextRunsOnPdfPage(pdfDoc, page, textRuns, embeddedFonts, embeddedTemplatePage.width, embeddedTemplatePage.height);
     }
-    console.groupEnd();
 
     return pdfDoc.save();
   };

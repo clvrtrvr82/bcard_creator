@@ -18,6 +18,12 @@ const dataUrlToUint8Array = (dataUrl: string) => {
   return bytes;
 };
 
+const toCanonicalFontName = (name: string) => {
+  const cleaned = name.replace(/[^a-zA-Z0-9 _-]/g, '').trim();
+  const canonical = cleaned.replace(/(?:[_-])\d{3,}$/g, '').trim();
+  return canonical || 'UploadedFont';
+};
+
 interface BusinessCardPreviewProps {
   data: CardData;
   side: SideLayout;
@@ -163,7 +169,15 @@ const BusinessCardPreview = React.forwardRef<HTMLDivElement, BusinessCardPreview
   }, [side.backgroundPdf]);
 
   const previewSide = useMemo(() => {
-    if (side.backgroundImage || !pdfTemplatePreviewUrl) return side;
+    if (side.backgroundPdf) {
+      if (!pdfTemplatePreviewUrl) return side;
+      return {
+        ...side,
+        backgroundImage: pdfTemplatePreviewUrl
+      };
+    }
+
+    if (!side.backgroundImage || !pdfTemplatePreviewUrl) return side;
     return {
       ...side,
       backgroundImage: pdfTemplatePreviewUrl
@@ -206,7 +220,7 @@ const BusinessCardPreview = React.forwardRef<HTMLDivElement, BusinessCardPreview
     styleEl.dataset.fontAssets = 'card-preview';
     styleEl.textContent = uniqueAssets
       .map((asset) => {
-        const safeName = asset.name.replace(/[^a-zA-Z0-9 _-]/g, '').trim() || 'UploadedFont';
+        const safeName = toCanonicalFontName(asset.name);
         return `@font-face { font-family: '${safeName}'; src: url(${asset.dataUrl}) format('${asset.format}'); font-display: swap; font-weight: 100 900; font-style: normal italic; }`;
       })
       .join('\n');

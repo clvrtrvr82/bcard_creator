@@ -36,7 +36,13 @@ const detectFontFormat = (fileName: string): FontAsset['format'] | null => {
 };
 
 const formatFontName = (fileName: string) => {
-  return fileName.replace(/\.[^.]+$/, '').replace(/[_-]+/g, ' ').trim() || 'Custom Font';
+  const base = fileName.replace(/\.[^.]+$/, '').trim();
+  if (!base) return 'Custom Font';
+
+  // Drop vendor/build numeric suffixes like "-5824" while keeping names like "AmsiPro-Bold".
+  const withoutNumericSuffix = base.replace(/(?:[_-])\d{3,}$/g, '');
+  const normalizedSeparators = withoutNumericSuffix.replace(/\s+/g, ' ').trim();
+  return normalizedSeparators || 'Custom Font';
 };
 
 const LayoutAssetsEditor: React.FC<LayoutAssetsEditorProps> = ({ layout, onChange }) => {
