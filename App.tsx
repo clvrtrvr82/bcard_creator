@@ -11,6 +11,7 @@ import jsPDF from 'jspdf';
 import 'svg2pdf.js';
 import { PDFDocument, StandardFonts, cmyk as pdfCmyk, rgb as pdfRgb, PDFFont } from 'pdf-lib';
 import fontkit from '@pdf-lib/fontkit';
+import { getDocument, GlobalWorkerOptions } from 'pdfjs-dist';
 import { cmykToHex, cmykToRgb, hexToCmyk, hexToRgb, normalizeCmyk, normalizeHex, normalizeRgb, rgbToCmyk } from './utils/color';
 import { pixelsToPoints } from './cardCanvas';
 import { buildCardSvg } from './utils/vectorExport';
@@ -26,6 +27,8 @@ const SHOPIFY_TAG_LOOKUP_ENABLED = import.meta.env?.VITE_ENABLE_SHOPIFY_TAG_LOOK
 const isBrowser = typeof window !== 'undefined';
 const safeLocalStorage = isBrowser ? window.localStorage : null;
 const safeSessionStorage = isBrowser ? window.sessionStorage : null;
+
+GlobalWorkerOptions.workerSrc = new URL('pdfjs-dist/build/pdf.worker.min.mjs', import.meta.url).toString();
 
 const DEFAULT_SETTINGS: AppSettings = {
   appName: 'THEMEVAULT',
@@ -558,6 +561,62 @@ const bytesToBase64 = (bytes: Uint8Array) => {
   return window.btoa(binary);
 };
 
+const renderPdfBytesToPreviewImages = async (pdfBytes: Uint8Array): Promise<{ front: string | null; back: string | null }> => {
+  let loadingTask: ReturnType<typeof getDocument> | null = null;
+  let pdfDoc: Awaited<ReturnType<ReturnType<typeof getDocument>['promise']>> | null = null;
+
+  const renderPageAtIndex = async (pageIndex: number) => {
+    if (!pdfDoc || pdfDoc.numPages < pageIndex) return null;
+    const page = await pdfDoc.getPage(pageIndex);
+    const viewportBase = page.getViewport({ scale: 1 });
+    const scale = CARD_WIDTH / Math.max(1, viewportBase.width);
+    const viewport = page.getViewport({ scale });
+
+    const pageCanvas = document.createElement('canvas');
+    pageCanvas.width = CARD_WIDTH;
+    pageCanvas.height = CARD_HEIGHT;
+    const pageCtx = pageCanvas.getContext('2d');
+    if (!pageCtx) return null;
+
+    pageCtx.clearRect(0, 0, CARD_WIDTH, CARD_HEIGHT);
+    const tempCanvas = document.createElement('canvas');
+    tempCanvas.width = Math.max(1, Math.round(viewport.width));
+    tempCanvas.height = Math.max(1, Math.round(viewport.height));
+    const tempCtx = tempCanvas.getContext('2d');
+    if (!tempCtx) return null;
+
+    await page.render({ canvasContext: tempCtx, viewport }).promise;
+    pageCtx.drawImage(tempCanvas, 0, 0, CARD_WIDTH, CARD_HEIGHT);
+    try {
+      page.cleanup?.();
+    } catch {
+      // Ignore cleanup failures from PDF.js internals.
+    }
+
+    return pageCanvas.toDataURL('image/png');
+  };
+
+  try {
+    loadingTask = getDocument({ data: pdfBytes });
+    pdfDoc = await loadingTask.promise;
+    return {
+      front: await renderPageAtIndex(1),
+      back: await renderPageAtIndex(2)
+    };
+  } finally {
+    try {
+      pdfDoc?.cleanup?.();
+    } catch {
+      // Ignore cleanup failures from PDF.js internals.
+    }
+    try {
+      loadingTask?.destroy?.();
+    } catch {
+      // Ignore cleanup failures from PDF.js internals.
+    }
+  }
+};
+
 const extractSvgTextRuns = (svgMarkup: string): SvgTextRun[] => {
   const parser = new DOMParser();
   const parsed = parser.parseFromString(svgMarkup, 'image/svg+xml');
@@ -990,6 +1049,8 @@ const CustomizerScreen = ({ layout, onBack, onComplete, settings, productHandle,
   const [previewSide, setPreviewSide] = useState<'front' | 'back'>('front');
   const [derivedProductHandle, setDerivedProductHandle] = useState<string | null>(null);
   const [productSource, setProductSource] = useState<'query' | 'layout' | 'tags' | null>(null);
+  const [livePdfPreview, setLivePdfPreview] = useState<{ front: string | null; back: string | null }>({ front: null, back: null });
+  const livePreviewRenderToken = useRef(0);
   const proofRef = useRef<HTMLDivElement>(null);
   const baseProductHandle = useMemo(() => productHandle || layout.shopifyProductHandle || null, [productHandle, layout.shopifyProductHandle]);
   const tagLookupActive = tagLookupEnabled && Boolean(layout.shopifyTags?.length);
@@ -1366,6 +1427,42 @@ const CustomizerScreen = ({ layout, onBack, onComplete, settings, productHandle,
     return pdfDoc.save();
   };
 
+  useEffect(() => {
+    const hasPdfTemplate = Boolean(layout.front.backgroundPdf || layout.back?.backgroundPdf);
+    if (!hasPdfTemplate) {
+      setLivePdfPreview({ front: null, back: null });
+      return;
+    }
+
+    let cancelled = false;
+    const requestToken = livePreviewRenderToken.current + 1;
+    livePreviewRenderToken.current = requestToken;
+
+    const timeoutId = window.setTimeout(async () => {
+      try {
+        const printReadyBytes = await createPrintReadyPdf();
+        const rendered = await renderPdfBytesToPreviewImages(printReadyBytes);
+        if (cancelled || requestToken !== livePreviewRenderToken.current) return;
+        setLivePdfPreview(rendered);
+      } catch (error) {
+        if (cancelled || requestToken !== livePreviewRenderToken.current) return;
+        console.warn('Unable to render CMYK-matched live preview from print-ready PDF.', error);
+        setLivePdfPreview({ front: null, back: null });
+      }
+    }, 180);
+
+    return () => {
+      cancelled = true;
+      window.clearTimeout(timeoutId);
+    };
+  }, [
+    data,
+    layout.back,
+    layout.fontAssets,
+    layout.front,
+    settings
+  ]);
+
   const downloadCanvasImage = (canvas: HTMLCanvasElement, fileName: string, quality = 0.82) => {
     const anchor = document.createElement('a');
     anchor.href = canvas.toDataURL('image/jpeg', quality);
@@ -1536,6 +1633,44 @@ const CustomizerScreen = ({ layout, onBack, onComplete, settings, productHandle,
     }
   };
 
+  const renderPreviewCard = (sideName: CardSide, sideLayout: SideLayout, scale: number) => {
+    const previewImage = sideName === 'front' ? livePdfPreview.front : livePdfPreview.back;
+    if (previewImage) {
+      const scaledWidth = CARD_WIDTH * scale;
+      const scaledHeight = CARD_HEIGHT * scale;
+      return (
+        <div
+          className="flex-shrink-0"
+          style={{
+            width: `${scaledWidth}px`,
+            height: `${scaledHeight}px`,
+            position: 'relative',
+            border: '1px solid #cbd5e1',
+            borderRadius: '2px',
+            overflow: 'hidden',
+            boxShadow: '0 15px 30px -10px rgba(0, 0, 0, 0.15)'
+          }}
+        >
+          <img
+            src={previewImage}
+            alt={`${sideName} preview`}
+            className="absolute inset-0 h-full w-full"
+          />
+        </div>
+      );
+    }
+
+    return (
+      <BusinessCardPreview
+        data={getRenderDataForSide(sideName, data)}
+        scale={scale}
+        side={sideLayout}
+        settings={settings}
+        fontAssets={layout.fontAssets}
+      />
+    );
+  };
+
   const formStep = (
     <div className="grid grid-cols-1 lg:grid-cols-[340px_minmax(0,1fr)] gap-6">
       <div className="space-y-4">
@@ -1634,7 +1769,7 @@ const CustomizerScreen = ({ layout, onBack, onComplete, settings, productHandle,
           )}
         </div>
         <div className="rounded-[24px] border border-slate-200 bg-slate-50 p-4 overflow-hidden shadow-inner">
-          <BusinessCardPreview data={getRenderDataForSide(previewSide, data)} scale={convertLegacyDisplayScale(1.35)} side={previewSideLayout} settings={settings} fontAssets={layout.fontAssets} />
+          {renderPreviewCard(previewSide, previewSideLayout, convertLegacyDisplayScale(1.35))}
         </div>
       </div>
     </div>
@@ -1656,23 +1791,11 @@ const CustomizerScreen = ({ layout, onBack, onComplete, settings, productHandle,
         <div className="bg-white border border-slate-200 rounded-[22px] p-5">
           <div className={`bg-slate-900 rounded-[20px] p-6 ${hasBackSide ? 'flex flex-col md:flex-row gap-6 overflow-x-auto' : 'flex justify-center'}`}>
             <div className="shrink-0">
-              <BusinessCardPreview
-                data={getRenderDataForSide('front', data)}
-                scale={hasBackSide ? convertLegacyDisplayScale(1.05) : convertLegacyDisplayScale(1.6)}
-                side={layout.front}
-                settings={settings}
-                fontAssets={layout.fontAssets}
-              />
+              {renderPreviewCard('front', layout.front, hasBackSide ? convertLegacyDisplayScale(1.05) : convertLegacyDisplayScale(1.6))}
             </div>
             {hasBackSide && layout.back && (
               <div className="shrink-0">
-                <BusinessCardPreview
-                  data={getRenderDataForSide('back', data)}
-                  scale={convertLegacyDisplayScale(1.05)}
-                  side={layout.back}
-                  settings={settings}
-                  fontAssets={layout.fontAssets}
-                />
+                {renderPreviewCard('back', layout.back, convertLegacyDisplayScale(1.05))}
               </div>
             )}
           </div>
@@ -1812,7 +1935,7 @@ const CustomizerScreen = ({ layout, onBack, onComplete, settings, productHandle,
               </div>
             </div>
             <div className="bg-slate-100 rounded-2xl p-3">
-              <BusinessCardPreview data={getRenderDataForSide('front', data)} scale={convertLegacyDisplayScale(1)} side={layout.front} settings={settings} fontAssets={layout.fontAssets} />
+              {renderPreviewCard('front', layout.front, convertLegacyDisplayScale(1))}
             </div>
             <p className="text-sm text-slate-600 leading-relaxed">
               Please double-check every visible detail before continuing, including spelling, phone numbers, email addresses, titles, positioning, and brand presentation. By selecting Looks Good, you confirm the proof is accurate, approved for print, and authorized for production release. After approval, changes may not be possible and we are not liable for customer-approved errors, omissions, or late correction requests.
