@@ -1,7 +1,7 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { Layout, FieldStyle, AppSettings, CardData, SideLayout, FontAsset, CMYK } from '../types';
 import BusinessCardPreview from './BusinessCardPreview';
-import { Eye, EyeOff, Image as ImageIcon, Plus, Trash2, ChevronUp, ChevronDown, Tag, X, Copy } from 'lucide-react';
+import { Eye, EyeOff, Image as ImageIcon, Plus, Trash2, ChevronUp, ChevronDown, X, Copy } from 'lucide-react';
 import { cmykToHex, hexToCmyk, normalizeCmyk } from '../utils/color';
 import { CARD_HEIGHT, CARD_SAFE_MARGIN, CARD_WIDTH, DEFAULT_FIELD_WIDTH, MIN_FIELD_HEIGHT, convertLegacyDisplayScale, pixelsToPoints, pointsToPixels, scaleLegacyValue } from '../cardCanvas';
 
@@ -126,7 +126,6 @@ const LayoutEditor: React.FC<LayoutEditorProps> = ({ layout, onChange, settings,
   const [selectedFieldKey, setSelectedFieldKey] = useState<string | null>(null);
   const [selectedFieldKeys, setSelectedFieldKeys] = useState<string[]>([]);
   const [newFieldName, setNewFieldName] = useState('');
-  const [tagInput, setTagInput] = useState('');
   const [productSearch, setProductSearch] = useState('');
   const [shopifyProducts, setShopifyProducts] = useState<ShopifyProductSummary[]>([]);
   const [productRequestCursor, setProductRequestCursor] = useState<string | null>(null);
@@ -750,23 +749,6 @@ const LayoutEditor: React.FC<LayoutEditorProps> = ({ layout, onChange, settings,
     }
   };
 
-  const handleAddTag = () => {
-    const cleaned = tagInput.trim().toLowerCase();
-    if (!cleaned) return;
-    commitLayout((draft) => {
-      const nextTags = new Set(draft.shopifyTags || []);
-      nextTags.add(cleaned);
-      draft.shopifyTags = Array.from(nextTags);
-    });
-    setTagInput('');
-  };
-
-  const handleRemoveTag = (tag: string) => {
-    commitLayout((draft) => {
-      draft.shopifyTags = (draft.shopifyTags || []).filter((entry) => entry !== tag);
-    });
-  };
-
   const handleApplyShopifyProduct = (product: ShopifyProductSummary) => {
     const normalizedTags = product.tags.map(normalizeShopifyToken).filter(Boolean);
 
@@ -781,6 +763,7 @@ const LayoutEditor: React.FC<LayoutEditorProps> = ({ layout, onChange, settings,
   const handleClearShopifyProduct = () => {
     commitLayout((draft) => {
       draft.shopifyProductHandle = '';
+      draft.shopifyTags = [];
     });
 
     pushMessage('Shopify product link cleared.');
@@ -1373,7 +1356,7 @@ const LayoutEditor: React.FC<LayoutEditorProps> = ({ layout, onChange, settings,
 
       <div className="bg-white border border-slate-100 rounded-[24px] p-6 space-y-5">
         <div className="flex items-center gap-3 text-[10px] font-black uppercase tracking-[0.3em] text-slate-400">
-          <Tag size={14} /> Shopify Trigger Tags
+          Shopify Product Assignment
         </div>
         <div className="space-y-3 rounded-2xl border border-slate-200 bg-slate-50 p-4">
           <div className="flex items-center justify-between gap-3">
@@ -1445,30 +1428,19 @@ const LayoutEditor: React.FC<LayoutEditorProps> = ({ layout, onChange, settings,
               )}
             </div>
           )}
-          <p className="text-[11px] leading-relaxed text-slate-500">Selecting a product stores its handle on the layout and syncs this layout's Shopify trigger tags from that product so the storefront button can target the right card.</p>
+          <p className="text-[11px] leading-relaxed text-slate-500">Selecting a product stores its handle on the layout and auto-syncs trigger tags from that product. Manual tag edits are disabled to keep mapping consistent.</p>
         </div>
-        <div className="flex flex-wrap gap-2.5">
-          {(layout.shopifyTags || []).map((tag) => (
-            <span key={tag} className="px-3 py-1.5 rounded-full bg-slate-900 text-white text-[11px] font-black uppercase tracking-[0.3em] flex items-center gap-2">
-              {tag}
-              <button type="button" onClick={() => handleRemoveTag(tag)} className="text-white/70">×</button>
-            </span>
-          ))}
-        </div>
-        <div className="flex items-center gap-2.5">
-          <input
-            value={tagInput}
-            onChange={(e) => setTagInput(e.target.value)}
-            onKeyDown={(e) => {
-              if (e.key === 'Enter') {
-                e.preventDefault();
-                handleAddTag();
-              }
-            }}
-            placeholder="property-brand-layout, luxury-suite"
-            className="flex-1 px-3.5 py-2.5 rounded-xl bg-slate-50 border border-slate-200 text-sm"
-          />
-          <button type="button" onClick={handleAddTag} className="px-3.5 py-2.5 rounded-xl bg-blue-600 text-white text-[11px] font-black uppercase tracking-[0.3em]">Add Tag</button>
+        <div className="space-y-2">
+          <p className="text-[11px] font-black uppercase tracking-[0.24em] text-slate-400">Synced Product Tags</p>
+          <div className="flex flex-wrap gap-2.5">
+            {(layout.shopifyTags || []).length ? (layout.shopifyTags || []).map((tag) => (
+              <span key={tag} className="px-3 py-1.5 rounded-full bg-slate-900 text-white text-[11px] font-black uppercase tracking-[0.3em]">
+                {tag}
+              </span>
+            )) : (
+              <span className="text-xs text-slate-500">No synced tags yet. Assign a Shopify product to populate tags.</span>
+            )}
+          </div>
         </div>
         <div className="grid grid-cols-1 gap-4">
           <label className="text-[11px] font-black uppercase tracking-[0.3em] text-slate-400">Template / Production Notes
