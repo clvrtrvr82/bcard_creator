@@ -1416,6 +1416,11 @@ const CustomizerScreen = ({ layout, onBack, onComplete, settings, productHandle,
       const templateBytes = dataUrlToBytes(templatePdfDataUrl);
       const [embeddedTemplatePage] = await pdfDoc.embedPdf(templateBytes, [0]);
       const page = pdfDoc.addPage([PRINT_PAGE_WIDTH_PT, PRINT_PAGE_HEIGHT_PT]);
+      // Explicitly mark PDF boxes: media/bleed at full page, trim at finished 3.5x2in.
+      page.setMediaBox(0, 0, PRINT_PAGE_WIDTH_PT, PRINT_PAGE_HEIGHT_PT);
+      page.setBleedBox(0, 0, PRINT_PAGE_WIDTH_PT, PRINT_PAGE_HEIGHT_PT);
+      page.setTrimBox(PRINT_BLEED_PT, PRINT_BLEED_PT, PRINT_CARD_WIDTH_PT, PRINT_CARD_HEIGHT_PT);
+      page.setCropBox(PRINT_BLEED_PT, PRINT_BLEED_PT, PRINT_CARD_WIDTH_PT, PRINT_CARD_HEIGHT_PT);
       page.drawPage(embeddedTemplatePage, {
         x: 0,
         y: 0,
