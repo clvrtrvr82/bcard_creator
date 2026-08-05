@@ -8,6 +8,10 @@ import { getDocument, GlobalWorkerOptions } from 'pdfjs-dist';
 
 GlobalWorkerOptions.workerSrc = new URL('pdfjs-dist/build/pdf.worker.min.mjs', import.meta.url).toString();
 
+const PRINT_CARD_WIDTH_PT = 3.5 * 72;
+const PRINT_CARD_HEIGHT_PT = 2 * 72;
+const PRINT_BLEED_PT = 0.125 * 72;
+
 const dataUrlToUint8Array = (dataUrl: string) => {
   const base64 = dataUrl.split(',')[1] || '';
   const binary = window.atob(base64);
@@ -111,7 +115,8 @@ const BusinessCardPreview = React.forwardRef<HTMLDivElement, BusinessCardPreview
         pdfDoc = await loadingTask.promise;
         firstPage = await pdfDoc.getPage(1);
         const baseViewport = firstPage.getViewport({ scale: 1 });
-        const scale = CARD_WIDTH / baseViewport.width;
+        const includesBleed = baseViewport.width > PRINT_CARD_WIDTH_PT + 0.5 || baseViewport.height > PRINT_CARD_HEIGHT_PT + 0.5;
+        const scale = CARD_WIDTH / PRINT_CARD_WIDTH_PT;
         const viewport = firstPage.getViewport({ scale });
 
         const canvas = document.createElement('canvas');
@@ -129,7 +134,16 @@ const BusinessCardPreview = React.forwardRef<HTMLDivElement, BusinessCardPreview
         if (!pageCtx) throw new Error('Canvas rendering context unavailable for PDF page.');
 
         await firstPage.render({ canvasContext: pageCtx, viewport }).promise;
-        ctx.drawImage(pageCanvas, 0, 0, CARD_WIDTH, CARD_HEIGHT);
+
+        if (includesBleed) {
+          const trimX = Math.max(0, PRINT_BLEED_PT * scale);
+          const trimY = Math.max(0, PRINT_BLEED_PT * scale);
+          const trimWidth = Math.min(pageCanvas.width - trimX, PRINT_CARD_WIDTH_PT * scale);
+          const trimHeight = Math.min(pageCanvas.height - trimY, PRINT_CARD_HEIGHT_PT * scale);
+          ctx.drawImage(pageCanvas, trimX, trimY, trimWidth, trimHeight, 0, 0, CARD_WIDTH, CARD_HEIGHT);
+        } else {
+          ctx.drawImage(pageCanvas, 0, 0, CARD_WIDTH, CARD_HEIGHT);
+        }
 
         if (!cancelled) {
           setPdfTemplatePreviewUrl(canvas.toDataURL('image/png'));

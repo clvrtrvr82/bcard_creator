@@ -577,6 +577,8 @@ const renderPdfBytesToPreviewImages = async (pdfBytes: Uint8Array): Promise<{ fr
   const renderPageAtIndex = async (pageIndex: number) => {
     if (!pdfDoc || pdfDoc.numPages < pageIndex) return null;
     const page = await pdfDoc.getPage(pageIndex);
+    const viewportBase = page.getViewport({ scale: 1 });
+    const includesBleed = viewportBase.width > PRINT_CARD_WIDTH_PT + 0.5 || viewportBase.height > PRINT_CARD_HEIGHT_PT + 0.5;
     const scale = CARD_WIDTH / Math.max(1, PRINT_CARD_WIDTH_PT);
     const viewport = page.getViewport({ scale });
 
@@ -595,11 +597,15 @@ const renderPdfBytesToPreviewImages = async (pdfBytes: Uint8Array): Promise<{ fr
 
     await page.render({ canvasContext: tempCtx, viewport }).promise;
 
-    const trimX = Math.max(0, PRINT_BLEED_PT * scale);
-    const trimY = Math.max(0, PRINT_BLEED_PT * scale);
-    const trimWidth = Math.min(tempCanvas.width, PRINT_CARD_WIDTH_PT * scale);
-    const trimHeight = Math.min(tempCanvas.height, PRINT_CARD_HEIGHT_PT * scale);
-    pageCtx.drawImage(tempCanvas, trimX, trimY, trimWidth, trimHeight, 0, 0, CARD_WIDTH, CARD_HEIGHT);
+    if (includesBleed) {
+      const trimX = Math.max(0, PRINT_BLEED_PT * scale);
+      const trimY = Math.max(0, PRINT_BLEED_PT * scale);
+      const trimWidth = Math.min(tempCanvas.width - trimX, PRINT_CARD_WIDTH_PT * scale);
+      const trimHeight = Math.min(tempCanvas.height - trimY, PRINT_CARD_HEIGHT_PT * scale);
+      pageCtx.drawImage(tempCanvas, trimX, trimY, trimWidth, trimHeight, 0, 0, CARD_WIDTH, CARD_HEIGHT);
+    } else {
+      pageCtx.drawImage(tempCanvas, 0, 0, CARD_WIDTH, CARD_HEIGHT);
+    }
     try {
       page.cleanup?.();
     } catch {

@@ -368,10 +368,11 @@ const LayoutEditor: React.FC<LayoutEditorProps> = ({ layout, onChange, settings,
     };
   };
 
-  const normalizePositionValue = (value: number, max: number) => {
-    const clamped = clamp(value, 0, max);
-    const snapped = snapToGrid ? Math.round(clamped / positionStep) * positionStep : clamped;
-    return Number(clamp(snapped, 0, max).toFixed(2));
+  const normalizePositionValue = (value: number, max: number, applySnap = true) => {
+    const safeMax = Math.max(0, max);
+    const clamped = clamp(value, 0, safeMax);
+    const snapped = applySnap && snapToGrid ? Math.round(clamped / positionStep) * positionStep : clamped;
+    return Number(clamp(snapped, 0, safeMax).toFixed(2));
   };
 
   const commitLayout = (mutator: (draft: Layout) => void) => {
@@ -482,7 +483,7 @@ const LayoutEditor: React.FC<LayoutEditorProps> = ({ layout, onChange, settings,
       const maxLeft = CARD_WIDTH - width;
       const maxTop = CARD_HEIGHT - height;
       const max = axis === 'left' ? maxLeft : maxTop;
-      (targetField as any)[axis] = normalizePositionValue(value, max);
+      (targetField as any)[axis] = normalizePositionValue(value, max, false);
       if (axis === 'left') delete targetField.right;
     });
   };
@@ -947,7 +948,33 @@ const LayoutEditor: React.FC<LayoutEditorProps> = ({ layout, onChange, settings,
     return nextPreview;
   }, [layout.brand, layout.id, previewCard, selectedField, selectedFieldKey]);
 
-  const stylePreviewData = previewCard;
+  const stylePreviewData = useMemo(() => {
+    if (!selectedFieldKey || !selectedField) return previewCard;
+
+    const currentValue = selectedField.value || previewCard.customValues?.[selectedFieldKey] || '';
+    if (currentValue.trim().length > 0) return previewCard;
+
+    const previewText = selectedField.label || selectedFieldKey;
+    const nextPreview: CardData = {
+      ...previewCard,
+      customValues: {
+        ...(previewCard.customValues || {})
+      }
+    };
+
+    if (selectedFieldKey === 'address' || selectedFieldKey === 'addressLine1') {
+      nextPreview.addressLine1 = previewText;
+      return nextPreview;
+    }
+
+    if (selectedFieldKey in nextPreview) {
+      (nextPreview as any)[selectedFieldKey] = previewText;
+      return nextPreview;
+    }
+
+    nextPreview.customValues![selectedFieldKey] = previewText;
+    return nextPreview;
+  }, [previewCard, selectedField, selectedFieldKey]);
 
   const placementPreviewSide = useMemo(() => {
     if (!selectedFieldKey || !selectedField || fieldEditorSection !== 'placement') return sideLayout;
@@ -1676,7 +1703,7 @@ const LayoutEditor: React.FC<LayoutEditorProps> = ({ layout, onChange, settings,
                       </button>
                       <span className="text-[11px] font-semibold normal-case tracking-normal text-slate-400">Drag directly on the highlighted field to place it.</span>
                     </div>
-                    <div ref={fieldEditorPreviewRef} className="rounded-[20px] border border-slate-200 bg-white p-3 overflow-auto overscroll-contain min-h-[clamp(280px,42vh,520px)]">
+                    <div ref={fieldEditorPreviewRef} className="rounded-[20px] border border-slate-200 bg-white p-3 h-[clamp(280px,42vh,520px)] overflow-auto overscroll-contain">
                         <div
                           className="relative mx-auto"
                           style={{ width: CARD_WIDTH * effectiveFieldEditorPreviewScale + CARD_FRAME_PADDING * 2, height: CARD_HEIGHT * effectiveFieldEditorPreviewScale + CARD_FRAME_PADDING * 2 }}
