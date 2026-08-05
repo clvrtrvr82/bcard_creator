@@ -1005,6 +1005,16 @@ const LayoutEditor: React.FC<LayoutEditorProps> = ({ layout, onChange, settings,
   }, [showFieldEditorModal, selectedFieldKey]);
 
   useEffect(() => {
+    if (!showFieldEditorModal || typeof document === 'undefined') return undefined;
+    const previousOverflow = document.body.style.overflow;
+    document.body.style.overflow = 'hidden';
+
+    return () => {
+      document.body.style.overflow = previousOverflow;
+    };
+  }, [showFieldEditorModal]);
+
+  useEffect(() => {
     setShowPlacementDetails(false);
     setShowStyleAdvanced(false);
   }, [selectedFieldKey, fieldEditorSection]);
@@ -1666,7 +1676,7 @@ const LayoutEditor: React.FC<LayoutEditorProps> = ({ layout, onChange, settings,
                       </button>
                       <span className="text-[11px] font-semibold normal-case tracking-normal text-slate-400">Drag directly on the highlighted field to place it.</span>
                     </div>
-                    <div ref={fieldEditorPreviewRef} className="rounded-[20px] border border-slate-200 bg-white p-3 overflow-auto min-h-[clamp(280px,42vh,520px)]">
+                    <div ref={fieldEditorPreviewRef} className="rounded-[20px] border border-slate-200 bg-white p-3 overflow-auto overscroll-contain min-h-[clamp(280px,42vh,520px)]">
                         <div
                           className="relative mx-auto"
                           style={{ width: CARD_WIDTH * effectiveFieldEditorPreviewScale + CARD_FRAME_PADDING * 2, height: CARD_HEIGHT * effectiveFieldEditorPreviewScale + CARD_FRAME_PADDING * 2 }}

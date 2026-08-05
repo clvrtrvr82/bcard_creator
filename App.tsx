@@ -504,6 +504,15 @@ const PRODUCT_REQUEST_TIMEOUT_MS = 12000;
 const DEFAULT_PROOF_BASE_URL = 'https://bcard-creator.onrender.com';
 const PRINT_CARD_WIDTH_IN = 3.5;
 const PRINT_CARD_HEIGHT_IN = 2;
+const PRINT_BLEED_IN = 0.125;
+const PRINT_PAGE_WIDTH_IN = PRINT_CARD_WIDTH_IN + PRINT_BLEED_IN * 2;
+const PRINT_PAGE_HEIGHT_IN = PRINT_CARD_HEIGHT_IN + PRINT_BLEED_IN * 2;
+const POINTS_PER_INCH = 72;
+const PRINT_CARD_WIDTH_PT = PRINT_CARD_WIDTH_IN * POINTS_PER_INCH;
+const PRINT_CARD_HEIGHT_PT = PRINT_CARD_HEIGHT_IN * POINTS_PER_INCH;
+const PRINT_BLEED_PT = PRINT_BLEED_IN * POINTS_PER_INCH;
+const PRINT_PAGE_WIDTH_PT = PRINT_PAGE_WIDTH_IN * POINTS_PER_INCH;
+const PRINT_PAGE_HEIGHT_PT = PRINT_PAGE_HEIGHT_IN * POINTS_PER_INCH;
 const SIDE_VALUE_PREFIX = '__side__';
 
 type CardSide = 'front' | 'back';
@@ -568,8 +577,7 @@ const renderPdfBytesToPreviewImages = async (pdfBytes: Uint8Array): Promise<{ fr
   const renderPageAtIndex = async (pageIndex: number) => {
     if (!pdfDoc || pdfDoc.numPages < pageIndex) return null;
     const page = await pdfDoc.getPage(pageIndex);
-    const viewportBase = page.getViewport({ scale: 1 });
-    const scale = CARD_WIDTH / Math.max(1, viewportBase.width);
+    const scale = CARD_WIDTH / Math.max(1, PRINT_CARD_WIDTH_PT);
     const viewport = page.getViewport({ scale });
 
     const pageCanvas = document.createElement('canvas');
@@ -586,7 +594,12 @@ const renderPdfBytesToPreviewImages = async (pdfBytes: Uint8Array): Promise<{ fr
     if (!tempCtx) return null;
 
     await page.render({ canvasContext: tempCtx, viewport }).promise;
-    pageCtx.drawImage(tempCanvas, 0, 0, CARD_WIDTH, CARD_HEIGHT);
+
+    const trimX = Math.max(0, PRINT_BLEED_PT * scale);
+    const trimY = Math.max(0, PRINT_BLEED_PT * scale);
+    const trimWidth = Math.min(tempCanvas.width, PRINT_CARD_WIDTH_PT * scale);
+    const trimHeight = Math.min(tempCanvas.height, PRINT_CARD_HEIGHT_PT * scale);
+    pageCtx.drawImage(tempCanvas, trimX, trimY, trimWidth, trimHeight, 0, 0, CARD_WIDTH, CARD_HEIGHT);
     try {
       page.cleanup?.();
     } catch {
@@ -724,10 +737,12 @@ const drawSvgTextRunsOnPdfPage = async (
   runs: SvgTextRun[],
   fontMap: Map<string, PDFFont>,
   pageWidth: number,
-  pageHeight: number
+  pageHeight: number,
+  contentBox?: { x: number; y: number; width: number; height: number }
 ) => {
-  const scaleX = pageWidth / CARD_WIDTH;
-  const scaleY = pageHeight / CARD_HEIGHT;
+  const renderBox = contentBox || { x: 0, y: 0, width: pageWidth, height: pageHeight };
+  const scaleX = renderBox.width / CARD_WIDTH;
+  const scaleY = renderBox.height / CARD_HEIGHT;
 
   for (const run of runs) {
     const font = await resolvePdfLibFont(pdfDoc, fontMap, run.fontFamily, run.fontWeight, run.fontStyle);
@@ -736,9 +751,9 @@ const drawSvgTextRunsOnPdfPage = async (
     for (const line of run.lines) {
       const text = line.text || ' ';
       const width = font.widthOfTextAtSize(text, fontSizePt);
-      const anchorX = run.xPx * scaleX;
+      const anchorX = renderBox.x + run.xPx * scaleX;
       const x = run.anchor === 'center' ? anchorX - width / 2 : run.anchor === 'right' ? anchorX - width : anchorX;
-      const y = pageHeight - ((line.topPx * scaleY) + fontSizePt);
+      const y = pageHeight - (renderBox.y + (line.topPx * scaleY) + fontSizePt);
 
       const color = run.cmyk
         ? pdfCmyk(run.cmyk.c / 100, run.cmyk.m / 100, run.cmyk.y / 100, run.cmyk.k / 100)
@@ -1400,12 +1415,12 @@ const CustomizerScreen = ({ layout, onBack, onComplete, settings, productHandle,
 
       const templateBytes = dataUrlToBytes(templatePdfDataUrl);
       const [embeddedTemplatePage] = await pdfDoc.embedPdf(templateBytes, [0]);
-      const page = pdfDoc.addPage([embeddedTemplatePage.width, embeddedTemplatePage.height]);
+      const page = pdfDoc.addPage([PRINT_PAGE_WIDTH_PT, PRINT_PAGE_HEIGHT_PT]);
       page.drawPage(embeddedTemplatePage, {
         x: 0,
         y: 0,
-        width: embeddedTemplatePage.width,
-        height: embeddedTemplatePage.height
+        width: PRINT_PAGE_WIDTH_PT,
+        height: PRINT_PAGE_HEIGHT_PT
       });
 
       const sideData = getRenderDataForSide(sides[index].sideName, data);
@@ -1421,7 +1436,12 @@ const CustomizerScreen = ({ layout, onBack, onComplete, settings, productHandle,
         preserveTextNodes: true
       });
       const textRuns = extractSvgTextRuns(svg);
-      await drawSvgTextRunsOnPdfPage(pdfDoc, page, textRuns, embeddedFonts, embeddedTemplatePage.width, embeddedTemplatePage.height);
+      await drawSvgTextRunsOnPdfPage(pdfDoc, page, textRuns, embeddedFonts, PRINT_PAGE_WIDTH_PT, PRINT_PAGE_HEIGHT_PT, {
+        x: PRINT_BLEED_PT,
+        y: PRINT_BLEED_PT,
+        width: PRINT_CARD_WIDTH_PT,
+        height: PRINT_CARD_HEIGHT_PT
+      });
     }
 
     return pdfDoc.save();
@@ -1690,15 +1710,14 @@ const CustomizerScreen = ({ layout, onBack, onComplete, settings, productHandle,
                 const value = getFieldValue(fieldRef);
                 const isRequired = Boolean(field.required);
                 const showError = Boolean(fieldErrors[fieldRef.id]);
-                const sideTag = fieldRef.side === 'back' ? 'Back' : 'Front';
                 return (
-                  <label key={fieldRef.id} className="text-xs font-semibold text-slate-500 uppercase tracking-[0.25em] space-y-2">
+                  <label key={fieldRef.id} className="space-y-1.5 text-[11px] font-semibold text-slate-600">
                     <div className="flex items-center justify-between gap-3">
                       <span>
-                        [{sideTag}] {field.label || fieldRef.key}
+                        {field.label || fieldRef.key}
                         {isRequired && <span className="text-red-500 ml-2">*</span>}
                       </span>
-                      {showError && <span className="text-[10px] text-red-500 font-black tracking-[0.3em]">Required</span>}
+                      {showError && <span className="text-[10px] text-red-500 font-bold">Required</span>}
                     </div>
                     {ADDRESS_FIELD_KEYS.has(fieldRef.key) ? (
                       <AddressAutocomplete
@@ -1735,7 +1754,7 @@ const CustomizerScreen = ({ layout, onBack, onComplete, settings, productHandle,
               <ul className="space-y-1 text-[11px] text-slate-600">
                 {lockedFieldRefs.map((fieldRef) => (
                   <li key={fieldRef.id} className="flex justify-between gap-3">
-                    <span className="font-semibold text-slate-400">[{fieldRef.side === 'back' ? 'Back' : 'Front'}] {getFieldDefinition(fieldRef)?.label || fieldRef.key}</span>
+                    <span className="font-semibold text-slate-500">{getFieldDefinition(fieldRef)?.label || fieldRef.key}</span>
                     <span className="text-slate-800">{getFieldValue(fieldRef) || getFieldDefinition(fieldRef)?.value || '—'}</span>
                   </li>
                 ))}
