@@ -5,44 +5,11 @@ const DB_VERSION = 1;
 const STORE_NAME = 'app-state';
 const LAYOUTS_KEY = 'brand-configs';
 const SERVER_LAYOUTS_ENDPOINT = '/api/layouts';
-const SERVER_LAYOUTS_UNAVAILABLE_KEY = 'theme-vault-layout-api-unavailable';
 
 const hasIndexedDb = typeof indexedDB !== 'undefined';
-const hasLocalStorage = typeof window !== 'undefined' && typeof window.localStorage !== 'undefined';
-
-const isServerLayoutsApiUnavailable = () => {
-  if (!hasLocalStorage) return false;
-
-  try {
-    return window.localStorage.getItem(SERVER_LAYOUTS_UNAVAILABLE_KEY) === '1';
-  } catch {
-    return false;
-  }
-};
-
-const markServerLayoutsApiUnavailable = () => {
-  if (!hasLocalStorage) return;
-
-  try {
-    window.localStorage.setItem(SERVER_LAYOUTS_UNAVAILABLE_KEY, '1');
-  } catch {
-    // Ignore storage errors and keep runtime behavior resilient.
-  }
-};
-
-const clearServerLayoutsApiUnavailable = () => {
-  if (!hasLocalStorage) return;
-
-  try {
-    window.localStorage.removeItem(SERVER_LAYOUTS_UNAVAILABLE_KEY);
-  } catch {
-    // Ignore storage errors and keep runtime behavior resilient.
-  }
-};
 
 const loadServerLayouts = async (): Promise<Record<string, BrandConfig> | null> => {
   if (typeof fetch === 'undefined') return null;
-  if (isServerLayoutsApiUnavailable()) return null;
 
   try {
     const response = await fetch(SERVER_LAYOUTS_ENDPOINT, {
@@ -52,15 +19,12 @@ const loadServerLayouts = async (): Promise<Record<string, BrandConfig> | null> 
     });
 
     if (response.status === 404) {
-      markServerLayoutsApiUnavailable();
       return null;
     }
 
     if (!response.ok) {
       throw new Error(`Unable to load server layouts: ${response.status}`);
     }
-
-    clearServerLayoutsApiUnavailable();
 
     const payload = await response.json();
     const configs = payload?.brandConfigs;
@@ -77,7 +41,6 @@ const loadServerLayouts = async (): Promise<Record<string, BrandConfig> | null> 
 
 const persistServerLayouts = async (configs: Record<string, BrandConfig>): Promise<void> => {
   if (typeof fetch === 'undefined') return;
-  if (isServerLayoutsApiUnavailable()) return;
 
   const response = await fetch(SERVER_LAYOUTS_ENDPOINT, {
     method: 'PUT',
@@ -89,15 +52,12 @@ const persistServerLayouts = async (configs: Record<string, BrandConfig>): Promi
   });
 
   if (response.status === 404) {
-    markServerLayoutsApiUnavailable();
     return;
   }
 
   if (!response.ok) {
     throw new Error(`Unable to persist server layouts: ${response.status}`);
   }
-
-  clearServerLayoutsApiUnavailable();
 };
 
 const openDatabase = async (): Promise<IDBDatabase | null> => {
