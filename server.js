@@ -1,5 +1,6 @@
 import fs from 'node:fs';
 import path from 'node:path';
+import crypto from 'node:crypto';
 import { fileURLToPath } from 'node:url';
 import express from 'express';
 import fetch from 'node-fetch';
@@ -22,6 +23,8 @@ const SHOPIFY_STORE_DOMAIN = process.env.SHOPIFY_STORE_DOMAIN;
 const SHOPIFY_API_VERSION = process.env.SHOPIFY_API_VERSION ?? '2024-01';
 const SHOPIFY_STOREFRONT_TOKEN = process.env.SHOPIFY_STOREFRONT_TOKEN;
 const SHOPIFY_ADMIN_ACCESS_TOKEN = process.env.SHOPIFY_ADMIN_ACCESS_TOKEN;
+const ADMIN_PASSWORD = process.env.ADMIN_PASSWORD ?? 'admin123';
+const ADMIN_SESSION_SECRET = process.env.ADMIN_SESSION_SECRET ?? 'theme-vault-admin-session';
 const SMTP_HOST = process.env.SMTP_HOST;
 const SMTP_PORT = Number(process.env.SMTP_PORT ?? 587);
 const SMTP_SECURE = String(process.env.SMTP_SECURE ?? '').toLowerCase() === 'true' || SMTP_PORT === 465;
@@ -43,6 +46,7 @@ const layoutsFile = path.join(dataDir, 'brand-configs.json');
 const proofsIndexFile = path.join(dataDir, 'proofs-index.json');
 const builtLayoutIndexFile = path.join(distDir, 'layout-index.json');
 const sourceLayoutIndexFile = path.join(publicDir, 'layout-index.json');
+const ADMIN_SESSION_COOKIE = 'theme_vault_admin_session';
 
 if (!fs.existsSync(path.join(distDir, 'index.html'))) {
   console.error(`Missing build output at ${path.join(distDir, 'index.html')}. Run "npm run build" before starting the server.`);
@@ -75,6 +79,62 @@ const readJsonFile = (filePath) => {
     console.error(`Unable to parse JSON from ${filePath}`, error);
     return null;
   }
+};
+
+const hashAdminSessionValue = () => {
+  return crypto.createHash('sha256').update(`${ADMIN_PASSWORD}:${ADMIN_SESSION_SECRET}`).digest('hex');
+};
+
+const parseCookies = (cookieHeader = '') => {
+  return String(cookieHeader || '')
+    .split(';')
+    .map((chunk) => chunk.trim())
+    .filter(Boolean)
+    .reduce((acc, chunk) => {
+      const separator = chunk.indexOf('=');
+      if (separator === -1) return acc;
+      const key = chunk.slice(0, separator).trim();
+      const value = chunk.slice(separator + 1).trim();
+      if (!key) return acc;
+      acc[key] = decodeURIComponent(value);
+      return acc;
+    }, {});
+};
+
+const setAdminSessionCookie = (res) => {
+  const value = hashAdminSessionValue();
+  const parts = [
+    `${ADMIN_SESSION_COOKIE}=${encodeURIComponent(value)}`,
+    'Path=/',
+    'HttpOnly',
+    'SameSite=Lax',
+    process.env.NODE_ENV === 'production' ? 'Secure' : ''
+  ].filter(Boolean);
+  res.setHeader('Set-Cookie', parts.join('; '));
+};
+
+const clearAdminSessionCookie = (res) => {
+  const parts = [
+    `${ADMIN_SESSION_COOKIE}=`,
+    'Path=/',
+    'HttpOnly',
+    'SameSite=Lax',
+    'Max-Age=0',
+    process.env.NODE_ENV === 'production' ? 'Secure' : ''
+  ].filter(Boolean);
+  res.setHeader('Set-Cookie', parts.join('; '));
+};
+
+const isAdminRequest = (req) => {
+  const cookies = parseCookies(req.headers.cookie || '');
+  return cookies[ADMIN_SESSION_COOKIE] === hashAdminSessionValue();
+};
+
+const requireAdmin = (req, res, next) => {
+  if (!isAdminRequest(req)) {
+    return res.status(401).json({ message: 'Admin authentication required.' });
+  }
+  return next();
 };
 
 const proofMailer = PROOF_EMAIL_ENABLED
@@ -432,6 +492,26 @@ app.get('/api/shopify-capabilities', (_req, res) => {
   });
 });
 
+app.get('/api/admin/session', (req, res) => {
+  return res.json({ isAdmin: isAdminRequest(req) });
+});
+
+app.post('/api/admin/session', (req, res) => {
+  const password = String(req.body?.password || '');
+  if (password !== ADMIN_PASSWORD) {
+    clearAdminSessionCookie(res);
+    return res.status(401).json({ ok: false, message: 'Unauthorized' });
+  }
+
+  setAdminSessionCookie(res);
+  return res.json({ ok: true, isAdmin: true });
+});
+
+app.delete('/api/admin/session', (_req, res) => {
+  clearAdminSessionCookie(res);
+  return res.json({ ok: true });
+});
+
 app.get('/api/shopify-products', async (req, res) => {
   const check = withShopifyConfig(false);
   if (!check.ok || !SHOPIFY_BASE_URL) {
@@ -501,11 +581,11 @@ app.get('/api/layouts', (_req, res) => {
   return res.json({ brandConfigs });
 });
 
-app.get('/api/proofs', (_req, res) => {
+app.get('/api/proofs', requireAdmin, (_req, res) => {
   return res.json({ proofs: readProofIndex() });
 });
 
-app.put('/api/layouts', (req, res) => {
+app.put('/api/layouts', requireAdmin, (req, res) => {
   const brandConfigs = req.body?.brandConfigs;
   if (!brandConfigs || typeof brandConfigs !== 'object' || Array.isArray(brandConfigs)) {
     return res.status(400).json({ message: 'Provide a brandConfigs object.' });
@@ -524,7 +604,7 @@ app.put('/api/layouts', (req, res) => {
   }
 });
 
-app.delete('/api/layouts', (_req, res) => {
+app.delete('/api/layouts', requireAdmin, (_req, res) => {
   try {
     if (fs.existsSync(layoutsFile)) {
       fs.unlinkSync(layoutsFile);

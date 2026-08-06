@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useMemo, useCallback, useRef } from 'react';
-import { HashRouter, Routes, Route, Link, useNavigate } from 'react-router-dom';
+import { BrowserRouter, Routes, Route, Link, useNavigate } from 'react-router-dom';
 import { CardData, Layout, AppSettings, BrandConfig, ColorPreset, SideLayout, FieldStyle, FontAsset, CMYK } from './types';
 import { BRAND_CONFIGS } from './constants';
 import { CARD_CANVAS_VERSION, CARD_HEIGHT, CARD_WIDTH, convertLegacyDisplayScale, normalizeFieldStyle } from './cardCanvas';
@@ -20,7 +20,6 @@ import {
 } from 'lucide-react';
 
 const SETTINGS_KEY = 'theme-vault-settings';
-const ADMIN_AUTH_KEY = 'theme-vault-admin-session';
 const LAYOUT_STORAGE_KEY = 'theme-vault-layouts';
 const SHOPIFY_CART_ENABLED = import.meta.env?.VITE_ENABLE_SHOPIFY_CART === 'true';
 const SHOPIFY_TAG_LOOKUP_ENABLED = import.meta.env?.VITE_ENABLE_SHOPIFY_TAG_LOOKUP === 'true';
@@ -190,9 +189,20 @@ const getAppSettings = (): AppSettings => {
   }
 };
 
-const AdminGuard = ({ children, isAdmin, onLogin, settings }: { children?: React.ReactNode, isAdmin: boolean, onLogin: (p: string) => boolean, settings: AppSettings }) => {
+const AdminGuard = ({ children, isAdmin, authReady, onLogin, settings }: { children?: React.ReactNode, isAdmin: boolean, authReady: boolean, onLogin: (p: string) => Promise<boolean>, settings: AppSettings }) => {
   const [password, setPassword] = useState('');
   const [error, setError] = useState(false);
+  const [submitting, setSubmitting] = useState(false);
+
+  if (!authReady) {
+    return (
+      <div className="min-h-screen bg-slate-50 flex items-center justify-center p-6 animate-fadeIn">
+        <div className="w-full max-w-md bg-white p-12 rounded-[48px] shadow-2xl border border-slate-100 text-center">
+          <p className="text-xs font-black uppercase tracking-[0.35em] text-slate-400">Loading Admin</p>
+        </div>
+      </div>
+    );
+  }
 
   if (isAdmin) return <>{children}</>;
 
@@ -203,7 +213,13 @@ const AdminGuard = ({ children, isAdmin, onLogin, settings }: { children?: React
           <Lock size={40} />
         </div>
         <h2 className="text-4xl font-black text-slate-900 uppercase tracking-tighter">Vault Admin</h2>
-        <form onSubmit={(e) => { e.preventDefault(); if (!onLogin(password)) setError(true); }} className="space-y-6">
+        <form onSubmit={async (e) => {
+          e.preventDefault();
+          setSubmitting(true);
+          const ok = await onLogin(password);
+          setError(!ok);
+          setSubmitting(false);
+        }} className="space-y-6">
           <input 
             type="password" 
             value={password} 
@@ -213,8 +229,8 @@ const AdminGuard = ({ children, isAdmin, onLogin, settings }: { children?: React
             autoFocus
           />
           {error && <p className="text-xs text-red-500 font-black uppercase tracking-widest">Unauthorized Access</p>}
-          <button type="submit" className="w-full py-6 rounded-2xl text-white font-black uppercase tracking-[0.2em] shadow-xl hover:opacity-90 active:scale-[0.98] transition-all text-lg" style={{ backgroundColor: settings.primaryColor }}>
-            Unlock Dashboard
+          <button type="submit" disabled={submitting} className="w-full py-6 rounded-2xl text-white font-black uppercase tracking-[0.2em] shadow-xl hover:opacity-90 active:scale-[0.98] transition-all text-lg disabled:opacity-60" style={{ backgroundColor: settings.primaryColor }}>
+            {submitting ? 'Unlocking…' : 'Unlock Dashboard'}
           </button>
         </form>
       </div>
@@ -2004,7 +2020,8 @@ const MainLayout = () => {
   const [settings, setSettings] = useState<AppSettings>(getAppSettings());
   const [brandConfigs, setBrandConfigs] = useState<Record<string, BrandConfig>>({});
   const [layoutsHydrated, setLayoutsHydrated] = useState(false);
-  const [isAdmin, setIsAdmin] = useState(() => Boolean(safeSessionStorage?.getItem(ADMIN_AUTH_KEY)));
+  const [isAdmin, setIsAdmin] = useState(false);
+  const [adminSessionReady, setAdminSessionReady] = useState(false);
   const initialLayoutId = useMemo(() => getLayoutIdFromQuery(), []);
   const [flowStep, setFlowStep] = useState(() => initialLayoutId ? 2 : 1);
   const [activeLayoutId, setActiveLayoutId] = useState<string | null>(initialLayoutId);
@@ -2035,11 +2052,46 @@ const MainLayout = () => {
   );
 
   useEffect(() => {
-    if (!layoutsHydrated) return;
+    let cancelled = false;
+
+    const loadAdminSession = async () => {
+      try {
+        const response = await fetch('/api/admin/session', { credentials: 'include' });
+        if (!response.ok) {
+          if (!cancelled) {
+            setIsAdmin(false);
+            setAdminSessionReady(true);
+          }
+          return;
+        }
+        const payload = await response.json();
+        if (cancelled) return;
+        setIsAdmin(Boolean(payload?.isAdmin));
+      } catch (error) {
+        console.warn('Unable to load admin session state.', error);
+        if (!cancelled) {
+          setIsAdmin(false);
+        }
+      } finally {
+        if (!cancelled) {
+          setAdminSessionReady(true);
+        }
+      }
+    };
+
+    loadAdminSession();
+
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  useEffect(() => {
+    if (!layoutsHydrated || !isAdmin) return;
     persistLayouts(brandConfigs).catch((error) => {
       console.warn('Unable to persist layouts.', error);
     });
-  }, [brandConfigs, layoutsHydrated]);
+  }, [brandConfigs, isAdmin, layoutsHydrated]);
 
   useEffect(() => {
     let cancelled = false;
@@ -2134,7 +2186,7 @@ const MainLayout = () => {
     const handleShortcut = (e: KeyboardEvent) => {
       if (e.ctrlKey && e.shiftKey && e.key === 'A') {
         e.preventDefault();
-        navigate('/admin');
+        navigate('/shopify-admin');
       }
     };
     window.addEventListener('keydown', handleShortcut);
@@ -2151,20 +2203,64 @@ const MainLayout = () => {
     }
   }, []);
 
-  const handleLogin = (pass: string) => {
-    if (pass === 'admin123') {
-      safeSessionStorage?.setItem(ADMIN_AUTH_KEY, 'true');
+  const handleLogin = async (pass: string) => {
+    try {
+      const response = await fetch('/api/admin/session', {
+        method: 'POST',
+        credentials: 'include',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ password: pass })
+      });
+      if (!response.ok) {
+        setIsAdmin(false);
+        return false;
+      }
       setIsAdmin(true);
       return true;
+    } catch (error) {
+      console.warn('Unable to create admin session.', error);
+      setIsAdmin(false);
+      return false;
     }
-    return false;
   };
 
-  const handleLogout = () => {
-    safeSessionStorage?.removeItem(ADMIN_AUTH_KEY);
-    setIsAdmin(false);
-    navigate('/');
+  const handleLogout = async () => {
+    try {
+      await fetch('/api/admin/session', {
+        method: 'DELETE',
+        credentials: 'include'
+      });
+    } catch (error) {
+      console.warn('Unable to clear admin session.', error);
+    } finally {
+      setIsAdmin(false);
+      navigate('/');
+    }
   };
+
+  const adminConsole = (
+    <AdminGuard isAdmin={isAdmin} authReady={adminSessionReady} onLogin={handleLogin} settings={settings}>
+      {!layoutsHydrated ? loadingScreen : <div className="max-w-[1500px] mx-auto px-6 py-6 space-y-6 animate-fadeIn">
+        <div className="flex flex-col gap-4 border-b border-slate-200 pb-5 lg:flex-row lg:items-end lg:justify-between">
+          <div>
+            <h1 className="text-4xl md:text-5xl font-black uppercase tracking-tighter">Vault Control</h1>
+            <p className="text-slate-500 font-bold text-sm md:text-base mt-2">Layouts, palettes, proofs, and production metadata in one compact workspace.</p>
+          </div>
+          <div className="flex flex-wrap gap-4 text-[11px] font-black uppercase tracking-[0.32em] text-slate-400">
+            <span>Brands: {Object.keys(brandConfigs).length}</span>
+            <span>|</span>
+            <span>Layouts: {Object.values(brandConfigs).reduce((total, cfg) => total + cfg.layouts.length, 0)}</span>
+          </div>
+        </div>
+        <AdminDashboard
+          brandConfigs={brandConfigs}
+          onBrandConfigsChange={handleBrandConfigsChange}
+          settings={settings}
+          onSettingsChange={handleSettingsPersist}
+        />
+      </div>}
+    </AdminGuard>
+  );
 
   return (
     <div className="min-h-screen bg-slate-50 flex flex-col selection:bg-blue-500 selection:text-white">
@@ -2181,7 +2277,7 @@ const MainLayout = () => {
           </Link>
           {isAdmin && (
             <div className="flex items-center gap-6">
-              <Link to="/admin" className="text-[11px] font-black uppercase tracking-[0.28em] flex items-center gap-2.5 hover:text-blue-600 transition-colors"><Settings size={16}/> Management</Link>
+              <Link to="/shopify-admin" className="text-[11px] font-black uppercase tracking-[0.28em] flex items-center gap-2.5 hover:text-blue-600 transition-colors"><Settings size={16}/> Management</Link>
               <button onClick={handleLogout} className="text-[11px] font-black uppercase tracking-[0.28em] text-red-500 flex items-center gap-2.5 hover:text-red-600 transition-colors"><LogOut size={16}/> Terminate</button>
             </div>
           )}
@@ -2208,29 +2304,8 @@ const MainLayout = () => {
               <SelectionScreen onNext={(l) => { setActiveLayoutId(l.id); setFlowStep(2); }} settings={settings} brandConfigs={brandConfigs} activeTags={shopifyQueryTags} />
             )
           } />
-          <Route path="/admin/*" element={
-            <AdminGuard isAdmin={isAdmin} onLogin={handleLogin} settings={settings}>
-              {!layoutsHydrated ? loadingScreen : <div className="max-w-[1500px] mx-auto px-6 py-6 space-y-6 animate-fadeIn">
-                <div className="flex flex-col gap-4 border-b border-slate-200 pb-5 lg:flex-row lg:items-end lg:justify-between">
-                  <div>
-                    <h1 className="text-4xl md:text-5xl font-black uppercase tracking-tighter">Vault Control</h1>
-                    <p className="text-slate-500 font-bold text-sm md:text-base mt-2">Layouts, palettes, and production metadata in one compact workspace.</p>
-                  </div>
-                  <div className="flex flex-wrap gap-4 text-[11px] font-black uppercase tracking-[0.32em] text-slate-400">
-                    <span>Brands: {Object.keys(brandConfigs).length}</span>
-                    <span>|</span>
-                    <span>Layouts: {Object.values(brandConfigs).reduce((total, cfg) => total + cfg.layouts.length, 0)}</span>
-                  </div>
-                </div>
-                <AdminDashboard
-                  brandConfigs={brandConfigs}
-                  onBrandConfigsChange={handleBrandConfigsChange}
-                  settings={settings}
-                  onSettingsChange={handleSettingsPersist}
-                />
-              </div>}
-            </AdminGuard>
-          } />
+          <Route path="/admin/*" element={adminConsole} />
+          <Route path="/shopify-admin" element={adminConsole} />
         </Routes>
       </main>
       
@@ -2252,9 +2327,9 @@ const MainLayout = () => {
 };
 
 const App = () => (
-  <HashRouter>
+  <BrowserRouter>
     <MainLayout />
-  </HashRouter>
+  </BrowserRouter>
 );
 
 export default App;

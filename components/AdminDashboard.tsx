@@ -138,6 +138,9 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({ brandConfigs, onBrandCo
   const [settingsForm, setSettingsForm] = useState(settings);
   const [proofRecords, setProofRecords] = useState<ProofRecord[]>([]);
   const [proofStatus, setProofStatus] = useState<'idle' | 'loading' | 'ready' | 'error'>('idle');
+  const [proofSearch, setProofSearch] = useState('');
+  const [proofEmailFilter, setProofEmailFilter] = useState<'all' | 'sent' | 'unsent'>('all');
+  const [proofRefreshToken, setProofRefreshToken] = useState(0);
   const importFileRef = useRef<HTMLInputElement>(null);
 
   const allLayouts = useMemo(() => Object.entries(brandConfigs).flatMap(([brandKey, config]) => config.layouts.map((layout) => ({ ...layout, brand: layout.brand ?? brandKey }))), [brandConfigs]);
@@ -193,13 +196,43 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({ brandConfigs, onBrandCo
     return () => {
       cancelled = true;
     };
-  }, [activeTab]);
+  }, [activeTab, proofRefreshToken]);
 
   const filteredLayouts = useMemo(() => {
     const query = search.trim().toLowerCase();
     if (!query) return allLayouts;
     return allLayouts.filter((layout) => layout.name.toLowerCase().includes(query));
   }, [allLayouts, search]);
+
+  const filteredProofRecords = useMemo(() => {
+    const query = proofSearch.trim().toLowerCase();
+    return proofRecords.filter((proof) => {
+      const emailMatches = proofEmailFilter === 'all'
+        ? true
+        : proofEmailFilter === 'sent'
+          ? Boolean(proof.emailed)
+          : !proof.emailed;
+
+      if (!emailMatches) return false;
+      if (!query) return true;
+
+      const haystack = [
+        proof.reference,
+        proof.layoutName,
+        proof.layoutId,
+        proof.productHandle,
+        proof.selectedVariant?.title,
+        proof.notificationTarget,
+        proof.returnUrl,
+        ...(proof.cardData ? Object.values(proof.cardData).map((value) => typeof value === 'string' ? value : JSON.stringify(value)) : [])
+      ]
+        .filter(Boolean)
+        .join(' ')
+        .toLowerCase();
+
+      return haystack.includes(query);
+    });
+  }, [proofEmailFilter, proofRecords, proofSearch]);
 
   const getDefaultBrandKey = () => workingLayout?.brand?.toString() || allLayouts[0]?.brand?.toString() || Object.keys(brandConfigs)[0] || 'Universal';
 
@@ -583,9 +616,27 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({ brandConfigs, onBrandCo
                 <p className="text-sm font-black text-slate-900">Proof Registry</p>
                 <p className="text-xs text-slate-500 mt-1">Every print-ready PDF the app stored, with links back to the file and related layout metadata.</p>
               </div>
-              <button onClick={() => setActiveTab('operations')} className="px-3 py-2 rounded-xl border border-slate-200 bg-white text-[11px] font-black uppercase tracking-[0.24em] text-slate-600">
+              <button onClick={() => setProofRefreshToken((value) => value + 1)} className="px-3 py-2 rounded-xl border border-slate-200 bg-white text-[11px] font-black uppercase tracking-[0.24em] text-slate-600">
                 Refresh
               </button>
+            </div>
+
+            <div className="grid grid-cols-1 md:grid-cols-[minmax(0,1fr)_200px] gap-3">
+              <input
+                value={proofSearch}
+                onChange={(e) => setProofSearch(e.target.value)}
+                placeholder="Search by proof, layout, product handle, variant, or entered data"
+                className="w-full rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm text-slate-800"
+              />
+              <select
+                value={proofEmailFilter}
+                onChange={(e) => setProofEmailFilter(e.target.value as 'all' | 'sent' | 'unsent')}
+                className="w-full rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm text-slate-800"
+              >
+                <option value="all">All Email States</option>
+                <option value="sent">Emailed</option>
+                <option value="unsent">Not Emailed</option>
+              </select>
             </div>
 
             {proofStatus === 'loading' && <p className="text-sm text-slate-500">Loading proofs…</p>}
@@ -595,10 +646,15 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({ brandConfigs, onBrandCo
                 No print-ready PDFs have been recorded yet.
               </div>
             )}
+            {proofStatus === 'ready' && proofRecords.length > 0 && filteredProofRecords.length === 0 && (
+              <div className="rounded-2xl border border-dashed border-slate-200 bg-slate-50 px-4 py-5 text-sm text-slate-500">
+                No proofs match the current filters.
+              </div>
+            )}
 
-            {proofRecords.length > 0 && (
+            {filteredProofRecords.length > 0 && (
               <div className="space-y-3">
-                {proofRecords.map((proof) => (
+                {filteredProofRecords.map((proof) => (
                   <div key={proof.reference} className="rounded-2xl border border-slate-200 bg-slate-50 px-4 py-4 space-y-3">
                     <div className="flex flex-wrap items-start justify-between gap-3">
                       <div>
