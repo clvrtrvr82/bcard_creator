@@ -142,6 +142,7 @@ const LayoutEditor: React.FC<LayoutEditorProps> = ({ layout, onChange, settings,
   const [showStyleAdvanced, setShowStyleAdvanced] = useState(false);
   const [showPreviewOverlay, setShowPreviewOverlay] = useState(false);
   const [previewOverlayOpacity, setPreviewOverlayOpacity] = useState(0.55);
+  const [showShopifyAssignment, setShowShopifyAssignment] = useState(false);
   const [fieldBounds, setFieldBounds] = useState<Record<string, { top: number; left: number; width: number; height: number }>>({});
   const [fieldEditorZoom, setFieldEditorZoom] = useState(DEFAULT_FIELD_EDITOR_ZOOM);
   const canvasRef = useRef<HTMLDivElement>(null);
@@ -1355,9 +1356,19 @@ const LayoutEditor: React.FC<LayoutEditorProps> = ({ layout, onChange, settings,
       </div>
 
       <div className="bg-white border border-slate-100 rounded-[24px] p-6 space-y-5">
-        <div className="flex items-center gap-3 text-[10px] font-black uppercase tracking-[0.3em] text-slate-400">
-          Shopify Product Assignment
+        <div className="flex items-center justify-between gap-3 text-[10px] font-black uppercase tracking-[0.3em] text-slate-400">
+          <span>Shopify Product Assignment</span>
+          <button
+            type="button"
+            onClick={() => setShowShopifyAssignment((prev) => !prev)}
+            className="inline-flex items-center gap-2 rounded-xl border border-slate-200 bg-white px-3 py-2 text-[10px] font-black uppercase tracking-[0.24em] text-slate-500"
+          >
+            {showShopifyAssignment ? 'Hide' : 'Show'}
+            {showShopifyAssignment ? <ChevronUp size={12} /> : <ChevronDown size={12} />}
+          </button>
         </div>
+        {showShopifyAssignment ? (
+          <>
         <div className="space-y-3 rounded-2xl border border-slate-200 bg-slate-50 p-4">
           <div className="flex items-center justify-between gap-3">
             <div>
@@ -1442,6 +1453,10 @@ const LayoutEditor: React.FC<LayoutEditorProps> = ({ layout, onChange, settings,
             )}
           </div>
         </div>
+          </>
+        ) : (
+          <p className="text-xs text-slate-500">Assign a Shopify product to map this layout and sync trigger tags.</p>
+        )}
         <div className="grid grid-cols-1 gap-4">
           <label className="text-[11px] font-black uppercase tracking-[0.3em] text-slate-400">Template / Production Notes
             <textarea value={layout.previewUrl || ''} onChange={(e) => commitLayout((draft) => { draft.previewUrl = e.target.value; })} placeholder="Reference URL or production notes" className="mt-2 w-full px-3.5 py-2.5 rounded-xl bg-slate-50 border border-slate-200 text-sm" rows={4} />

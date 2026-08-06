@@ -1156,29 +1156,7 @@ const CustomizerScreen = ({ layout, onBack, onComplete, settings, productHandle,
   }, [returnUrl]);
 
   const buildLineItemProperties = useCallback((proof: { reference: string | null; proofUrl: string | null }) => {
-    const properties: Record<string, string> = {
-      'Layout ID': layout.id,
-      'Layout Name': layout.name,
-      'Proof Reference': proof.reference || 'manual_review'
-    };
-
-    const resolvedProofUrl = proof.proofUrl
-      || (proof.reference
-        ? `${DEFAULT_PROOF_BASE_URL}/proofs/${proof.reference}`
-        : null);
-
-    if (resolvedProofUrl) {
-      properties['Proof URL'] = resolvedProofUrl;
-      properties['Print-ready PDF URL'] = resolvedProofUrl;
-    }
-
-    if (effectiveProductHandle) {
-      properties['Product Handle'] = effectiveProductHandle;
-    }
-
-    if (returnUrl) {
-      properties['Shopify Product URL'] = returnUrl;
-    }
+    const properties: Record<string, string> = {};
 
     allFieldRefs.forEach((fieldRef) => {
       const field = getFieldDefinition(fieldRef);
@@ -1188,6 +1166,38 @@ const CustomizerScreen = ({ layout, onBack, onComplete, settings, productHandle,
       const label = fieldRef.side === 'back' ? `Back ${baseLabel}` : baseLabel;
       if (properties[label]) return;
       properties[label] = value;
+    });
+
+    const privateProperties: Record<string, string> = {
+      _cardify_layout_id: layout.id,
+      _cardify_layout_name: layout.name
+    };
+
+    if (proof.reference) {
+      privateProperties._cardify_proof_reference = proof.reference;
+    }
+
+    const resolvedProofUrl = proof.proofUrl
+      || (proof.reference
+        ? `${DEFAULT_PROOF_BASE_URL}/proofs/${proof.reference}`
+        : null);
+
+    if (resolvedProofUrl) {
+      privateProperties._cardify_proof_url = resolvedProofUrl;
+    }
+
+    if (effectiveProductHandle) {
+      privateProperties._cardify_product_handle = effectiveProductHandle;
+    }
+
+    if (returnUrl) {
+      privateProperties._cardify_return_url = returnUrl;
+    }
+
+    Object.entries(privateProperties).forEach(([key, value]) => {
+      const normalized = String(value || '').trim();
+      if (!normalized) return;
+      properties[key] = normalized;
     });
 
     return properties;
