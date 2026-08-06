@@ -2,7 +2,7 @@ import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { AppSettings, BrandConfig, Layout } from '../types';
 import LayoutEditor from './LayoutEditor';
 import LayoutAssetsEditor from './LayoutAssetsEditor';
-import { Search, Plus, Save, Trash2, Copy, Download, Upload } from 'lucide-react';
+import { Search, Plus, Save, Trash2, Copy, Download, Upload, ExternalLink, FileText, LayoutTemplate, Palette, Settings as SettingsIcon } from 'lucide-react';
 import { CARD_CANVAS_VERSION } from '../cardCanvas';
 
 interface AdminDashboardProps {
@@ -17,6 +17,25 @@ interface LayoutTransferPayload {
   exportedAt: string;
   brandConfigs: Record<string, BrandConfig>;
   settings?: AppSettings;
+}
+
+interface ProofRecord {
+  reference: string;
+  proofUrl: string;
+  createdAt: string;
+  layoutId?: string;
+  layoutName?: string;
+  productHandle?: string;
+  returnUrl?: string;
+  selectedVariant?: {
+    id?: number | null;
+    title?: string;
+    price?: number | null;
+    available?: boolean | null;
+  } | null;
+  cardData?: Record<string, unknown> | null;
+  emailed?: boolean;
+  notificationTarget?: string;
 }
 
 const createBlankBrandConfig = (brand: string): BrandConfig => ({
@@ -110,13 +129,15 @@ const normalizeLayoutForSave = (layout: Layout): Layout => {
 };
 
 const AdminDashboard: React.FC<AdminDashboardProps> = ({ brandConfigs, onBrandConfigsChange, settings, onSettingsChange }) => {
-  const [activeTab, setActiveTab] = useState<'overview' | 'layouts' | 'assets' | 'settings'>('overview');
+  const [activeTab, setActiveTab] = useState<'overview' | 'layouts' | 'assets' | 'operations' | 'settings'>('overview');
   const [search, setSearch] = useState('');
   const [selectedLayoutId, setSelectedLayoutId] = useState<string | null>(null);
   const [workingLayout, setWorkingLayout] = useState<Layout | null>(null);
   const [message, setMessage] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [settingsForm, setSettingsForm] = useState(settings);
+  const [proofRecords, setProofRecords] = useState<ProofRecord[]>([]);
+  const [proofStatus, setProofStatus] = useState<'idle' | 'loading' | 'ready' | 'error'>('idle');
   const importFileRef = useRef<HTMLInputElement>(null);
 
   const allLayouts = useMemo(() => Object.entries(brandConfigs).flatMap(([brandKey, config]) => config.layouts.map((layout) => ({ ...layout, brand: layout.brand ?? brandKey }))), [brandConfigs]);
@@ -143,6 +164,36 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({ brandConfigs, onBrandCo
   useEffect(() => {
     setSettingsForm(settings);
   }, [settings]);
+
+  useEffect(() => {
+    if (activeTab !== 'operations') return;
+    let cancelled = false;
+
+    const loadProofs = async () => {
+      setProofStatus('loading');
+      try {
+        const response = await fetch('/api/proofs', { credentials: 'include' });
+        if (!response.ok) {
+          throw new Error(`Unable to load proofs: ${response.status}`);
+        }
+        const payload = await response.json();
+        if (cancelled) return;
+        setProofRecords(Array.isArray(payload?.proofs) ? payload.proofs : []);
+        setProofStatus('ready');
+      } catch (loadError) {
+        console.error('Unable to load proof registry.', loadError);
+        if (cancelled) return;
+        setProofRecords([]);
+        setProofStatus('error');
+      }
+    };
+
+    loadProofs();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [activeTab]);
 
   const filteredLayouts = useMemo(() => {
     const query = search.trim().toLowerCase();
@@ -334,6 +385,8 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({ brandConfigs, onBrandCo
   const taggedLayouts = allLayouts.filter((layout) => (layout.shopifyTags?.length || 0) > 0).length;
   const untaggedLayouts = Math.max(totalLayouts - taggedLayouts, 0);
   const totalCustomFonts = allLayouts.reduce((acc, layout) => acc + (layout.customFonts?.length || 0), 0);
+  const totalProofs = proofRecords.length;
+  const linkedProducts = allLayouts.filter((layout) => layout.shopifyProductHandle).length;
   const renderOverview = () => (
     <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
       <div className="p-6 rounded-[28px] bg-white border border-slate-100 shadow-xl">
@@ -481,6 +534,118 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({ brandConfigs, onBrandCo
     </div>
   );
 
+  const renderOperations = () => (
+    <div className="space-y-6">
+      <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+        <div className="p-6 rounded-[28px] bg-white border border-slate-100 shadow-xl">
+          <p className="text-slate-400 text-[11px] font-black uppercase tracking-[0.35em]">Stored Proofs</p>
+          <p className="text-4xl font-black text-slate-900 mt-3">{totalProofs}</p>
+          <p className="text-xs text-slate-400 mt-1">Print-ready PDFs recorded by this app</p>
+        </div>
+        <div className="p-6 rounded-[28px] bg-white border border-slate-100 shadow-xl">
+          <p className="text-slate-400 text-[11px] font-black uppercase tracking-[0.35em]">Linked Layouts</p>
+          <p className="text-4xl font-black text-slate-900 mt-3">{linkedProducts}</p>
+          <p className="text-xs text-slate-400 mt-1">Layouts assigned to Shopify products</p>
+        </div>
+        <div className="p-6 rounded-[28px] bg-white border border-slate-100 shadow-xl">
+          <p className="text-slate-400 text-[11px] font-black uppercase tracking-[0.35em]">App Base</p>
+          <p className="text-base font-black text-slate-900 mt-3 break-all">{typeof window !== 'undefined' ? window.location.origin : 'Current host'}</p>
+          <p className="text-xs text-slate-400 mt-1">Use this URL as the admin app destination/link target</p>
+        </div>
+      </div>
+
+      <div className="grid grid-cols-1 xl:grid-cols-[320px_minmax(0,1fr)] gap-5 items-start">
+        <div className="space-y-4 xl:sticky xl:top-4">
+          <div className="bg-white border border-slate-100 rounded-[24px] p-5 space-y-4">
+            <div>
+              <p className="text-[11px] font-black uppercase tracking-[0.3em] text-slate-400">Quick Links</p>
+              <p className="mt-2 text-sm text-slate-500">Jump to the parts of the app an operator needs most often.</p>
+            </div>
+            <button onClick={() => setActiveTab('layouts')} className="w-full flex items-center justify-between rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 text-left text-sm font-semibold text-slate-800">
+              <span className="flex items-center gap-3"><LayoutTemplate size={18} /> Build Layouts</span>
+              <ExternalLink size={16} />
+            </button>
+            <button onClick={() => setActiveTab('assets')} className="w-full flex items-center justify-between rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 text-left text-sm font-semibold text-slate-800">
+              <span className="flex items-center gap-3"><Palette size={18} /> Fonts & Colors</span>
+              <ExternalLink size={16} />
+            </button>
+            <button onClick={() => setActiveTab('settings')} className="w-full flex items-center justify-between rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 text-left text-sm font-semibold text-slate-800">
+              <span className="flex items-center gap-3"><SettingsIcon size={18} /> App Settings</span>
+              <ExternalLink size={16} />
+            </button>
+          </div>
+        </div>
+
+        <div className="space-y-4 min-w-0">
+          <div className="bg-white border border-slate-100 rounded-[24px] p-5 space-y-4">
+            <div className="flex items-start justify-between gap-3">
+              <div>
+                <p className="text-sm font-black text-slate-900">Proof Registry</p>
+                <p className="text-xs text-slate-500 mt-1">Every print-ready PDF the app stored, with links back to the file and related layout metadata.</p>
+              </div>
+              <button onClick={() => setActiveTab('operations')} className="px-3 py-2 rounded-xl border border-slate-200 bg-white text-[11px] font-black uppercase tracking-[0.24em] text-slate-600">
+                Refresh
+              </button>
+            </div>
+
+            {proofStatus === 'loading' && <p className="text-sm text-slate-500">Loading proofs…</p>}
+            {proofStatus === 'error' && <p className="text-sm text-red-500">Unable to load proofs right now.</p>}
+            {proofStatus === 'ready' && proofRecords.length === 0 && (
+              <div className="rounded-2xl border border-dashed border-slate-200 bg-slate-50 px-4 py-5 text-sm text-slate-500">
+                No print-ready PDFs have been recorded yet.
+              </div>
+            )}
+
+            {proofRecords.length > 0 && (
+              <div className="space-y-3">
+                {proofRecords.map((proof) => (
+                  <div key={proof.reference} className="rounded-2xl border border-slate-200 bg-slate-50 px-4 py-4 space-y-3">
+                    <div className="flex flex-wrap items-start justify-between gap-3">
+                      <div>
+                        <p className="text-sm font-black text-slate-900">{proof.layoutName || proof.reference}</p>
+                        <p className="mt-1 text-[11px] font-semibold uppercase tracking-[0.24em] text-slate-400">{proof.reference}</p>
+                      </div>
+                      <a href={proof.proofUrl} target="_blank" rel="noreferrer" className="inline-flex items-center gap-2 rounded-xl border border-slate-200 bg-white px-3 py-2 text-[11px] font-black uppercase tracking-[0.24em] text-slate-700">
+                        <FileText size={14} /> Open PDF
+                      </a>
+                    </div>
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-3 text-xs text-slate-600">
+                      <div><span className="font-black uppercase tracking-[0.18em] text-slate-400">Created</span><p className="mt-1 text-sm text-slate-800">{proof.createdAt ? new Date(proof.createdAt).toLocaleString() : 'Unknown'}</p></div>
+                      <div><span className="font-black uppercase tracking-[0.18em] text-slate-400">Product Handle</span><p className="mt-1 text-sm text-slate-800">{proof.productHandle || 'Not captured'}</p></div>
+                      <div><span className="font-black uppercase tracking-[0.18em] text-slate-400">Variant</span><p className="mt-1 text-sm text-slate-800">{proof.selectedVariant?.title || 'Not captured'}</p></div>
+                      <div><span className="font-black uppercase tracking-[0.18em] text-slate-400">Email Status</span><p className="mt-1 text-sm text-slate-800">{proof.emailed ? `Sent to ${proof.notificationTarget || 'configured recipient'}` : 'Not emailed / email unavailable'}</p></div>
+                    </div>
+                    {proof.returnUrl && (
+                      <a href={proof.returnUrl} target="_blank" rel="noreferrer" className="inline-flex items-center gap-2 text-xs font-semibold text-blue-600">
+                        Open Shopify product page <ExternalLink size={14} />
+                      </a>
+                    )}
+                    {proof.cardData && Object.keys(proof.cardData).length > 0 && (
+                      <details className="rounded-xl border border-slate-200 bg-white px-3 py-2.5">
+                        <summary className="cursor-pointer text-[11px] font-black uppercase tracking-[0.24em] text-slate-500">Entered Card Data</summary>
+                        <div className="mt-3 grid grid-cols-1 md:grid-cols-2 gap-2 text-xs text-slate-700">
+                          {Object.entries(proof.cardData).map(([key, value]) => {
+                            if (value == null || value === '') return null;
+                            return (
+                              <div key={`${proof.reference}-${key}`} className="rounded-lg bg-slate-50 px-3 py-2">
+                                <p className="font-black uppercase tracking-[0.18em] text-slate-400">{key}</p>
+                                <p className="mt-1 break-words text-slate-800">{typeof value === 'string' ? value : JSON.stringify(value)}</p>
+                              </div>
+                            );
+                          })}
+                        </div>
+                      </details>
+                    )}
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+
   return (
     <div className="space-y-6">
       <input
@@ -496,6 +661,7 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({ brandConfigs, onBrandCo
             { key: 'overview', label: 'Overview' },
             { key: 'layouts', label: 'Layouts' },
             { key: 'assets', label: 'Fonts & Colors' },
+            { key: 'operations', label: 'Operations' },
             { key: 'settings', label: 'Settings' }
           ] as const
         ).map(({ key, label }) => (
@@ -527,6 +693,7 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({ brandConfigs, onBrandCo
       {activeTab === 'overview' && renderOverview()}
       {activeTab === 'layouts' && renderLayouts()}
       {activeTab === 'assets' && renderAssets()}
+      {activeTab === 'operations' && renderOperations()}
       {activeTab === 'settings' && renderSettings()}
     </div>
   );

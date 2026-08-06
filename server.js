@@ -40,6 +40,7 @@ const distDir = path.resolve(__dirname, 'dist');
 const publicDir = path.resolve(__dirname, 'public');
 const dataDir = path.resolve(__dirname, 'data');
 const layoutsFile = path.join(dataDir, 'brand-configs.json');
+const proofsIndexFile = path.join(dataDir, 'proofs-index.json');
 const builtLayoutIndexFile = path.join(distDir, 'layout-index.json');
 const sourceLayoutIndexFile = path.join(publicDir, 'layout-index.json');
 
@@ -158,6 +159,29 @@ const readStoredBrandConfigs = () => {
   }
 
   return configs;
+};
+
+const readProofIndex = () => {
+  const payload = readJsonFile(proofsIndexFile);
+  if (!payload || typeof payload !== 'object') return [];
+  const proofs = Array.isArray(payload.proofs) ? payload.proofs : [];
+  return proofs
+    .filter((entry) => entry && typeof entry === 'object')
+    .sort((left, right) => String(right.createdAt || '').localeCompare(String(left.createdAt || '')));
+};
+
+const writeProofIndex = (proofs) => {
+  const payload = {
+    updatedAt: new Date().toISOString(),
+    proofs
+  };
+  fs.writeFileSync(proofsIndexFile, JSON.stringify(payload, null, 2));
+};
+
+const appendProofIndexRecord = (record) => {
+  const existing = readProofIndex();
+  const next = [record, ...existing.filter((entry) => entry?.reference !== record.reference)].slice(0, 500);
+  writeProofIndex(next);
 };
 
 const mapLayoutsForPublicIndex = (brandConfigs) => {
@@ -477,6 +501,10 @@ app.get('/api/layouts', (_req, res) => {
   return res.json({ brandConfigs });
 });
 
+app.get('/api/proofs', (_req, res) => {
+  return res.json({ proofs: readProofIndex() });
+});
+
 app.put('/api/layouts', (req, res) => {
   const brandConfigs = req.body?.brandConfigs;
   if (!brandConfigs || typeof brandConfigs !== 'object' || Array.isArray(brandConfigs)) {
@@ -773,9 +801,49 @@ app.post('/api/proofs', (req, res) => {
       selectedVariant,
       cardData
     }).then((emailResult) => {
+      appendProofIndexRecord({
+        reference,
+        proofUrl,
+        createdAt: new Date().toISOString(),
+        layoutId: layoutId || '',
+        layoutName: layoutName || '',
+        productHandle: productHandle || '',
+        returnUrl: returnUrl || '',
+        selectedVariant: selectedVariant
+          ? {
+              id: selectedVariant.id ?? null,
+              title: selectedVariant.title || '',
+              price: selectedVariant.price ?? null,
+              available: selectedVariant.available ?? null
+            }
+          : null,
+        cardData: cardData && typeof cardData === 'object' ? cardData : null,
+        emailed: Boolean(emailResult?.emailed),
+        notificationTarget: emailResult?.to || notificationEmail || PROOF_NOTIFICATION_EMAIL || ''
+      });
       return res.json({ reference, proofUrl, ...emailResult });
     }).catch((error) => {
       console.error('Unable to send proof email', error);
+      appendProofIndexRecord({
+        reference,
+        proofUrl,
+        createdAt: new Date().toISOString(),
+        layoutId: layoutId || '',
+        layoutName: layoutName || '',
+        productHandle: productHandle || '',
+        returnUrl: returnUrl || '',
+        selectedVariant: selectedVariant
+          ? {
+              id: selectedVariant.id ?? null,
+              title: selectedVariant.title || '',
+              price: selectedVariant.price ?? null,
+              available: selectedVariant.available ?? null
+            }
+          : null,
+        cardData: cardData && typeof cardData === 'object' ? cardData : null,
+        emailed: false,
+        notificationTarget: notificationEmail || PROOF_NOTIFICATION_EMAIL || ''
+      });
       return res.json({ reference, proofUrl, emailed: false, reason: 'Unable to send proof email.' });
     });
     return;
