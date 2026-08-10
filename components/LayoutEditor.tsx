@@ -25,15 +25,16 @@ const TEXT_CASE_OPTIONS = [
   { label: 'Lowercase', value: 'lowercase' }
 ] as const;
 const PHONE_TYPE_OPTIONS: PhoneNumberTypeOption[] = [
-  { label: 'T: Telephone', value: 'Telephone' },
-  { label: 'D: Direct', value: 'Direct' },
-  { label: 'M: Mobile', value: 'Mobile' },
-  { label: 'C: Cell', value: 'Cell' },
-  { label: 'F: Fax', value: 'Fax' }
+  { label: 'T: Telephone', value: 'Telephone', code: 'T' },
+  { label: 'D: Direct', value: 'Direct', code: 'D' },
+  { label: 'M: Mobile', value: 'Mobile', code: 'M' },
+  { label: 'C: Cell', value: 'Cell', code: 'C' },
+  { label: 'F: Fax', value: 'Fax', code: 'F' }
 ];
 const createDefaultPhoneNumberConfig = (): PhoneNumberConfig => ({
   maxPhones: 1,
-  allowedTypes: PHONE_TYPE_OPTIONS
+  allowedTypes: PHONE_TYPE_OPTIONS,
+  variationPrefix: ''
 });
 
 interface LayoutEditorProps {
@@ -1001,11 +1002,13 @@ const LayoutEditor: React.FC<LayoutEditorProps> = ({ layout, onChange, settings,
     commitLayout((draft) => {
       const nextConfig: PhoneNumberConfig = {
         maxPhones: draft.phoneNumberConfig?.maxPhones || 1,
-        allowedTypes: draft.phoneNumberConfig?.allowedTypes?.length ? draft.phoneNumberConfig.allowedTypes : PHONE_TYPE_OPTIONS
+        allowedTypes: draft.phoneNumberConfig?.allowedTypes?.length ? draft.phoneNumberConfig.allowedTypes : PHONE_TYPE_OPTIONS,
+        variationPrefix: draft.phoneNumberConfig?.variationPrefix || ''
       };
       mutator(nextConfig);
       nextConfig.maxPhones = Math.max(1, Math.min(6, Math.round(nextConfig.maxPhones || 1)));
       nextConfig.allowedTypes = nextConfig.allowedTypes.length ? nextConfig.allowedTypes : PHONE_TYPE_OPTIONS;
+      nextConfig.variationPrefix = String(nextConfig.variationPrefix || '').trim().toUpperCase();
       draft.phoneNumberConfig = nextConfig;
     });
   };
@@ -1427,6 +1430,15 @@ const LayoutEditor: React.FC<LayoutEditorProps> = ({ layout, onChange, settings,
                 </div>
               </div>
             ))}
+          </div>
+          <div className="grid grid-cols-1 gap-3 md:grid-cols-[160px_minmax(0,1fr)] md:items-center">
+            <label className="text-[11px] font-black uppercase tracking-[0.3em] text-slate-400">Variation Prefix</label>
+            <input
+              value={phoneNumberConfig.variationPrefix || ''}
+              onChange={(event) => handlePhoneNumberConfigChange((draft) => { draft.variationPrefix = event.target.value; })}
+              placeholder="Example: TF or DM"
+              className="w-full rounded-2xl border border-slate-200 bg-white px-4 py-3 text-sm font-semibold text-slate-800"
+            />
           </div>
           <p className="text-xs text-slate-500">The popup will show the count selector and these preset choices when the user picks a layout.</p>
         </div>

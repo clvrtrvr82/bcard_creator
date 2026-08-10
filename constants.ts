@@ -23,12 +23,13 @@ export const BRAND_CONFIGS: Record<string, BrandConfig> = {
         phoneNumberConfig: {
           maxPhones: 2,
           allowedTypes: [
-            { label: 'T: Telephone', value: 'Telephone' },
-            { label: 'D: Direct', value: 'Direct' },
-            { label: 'M: Mobile', value: 'Mobile' },
-            { label: 'C: Cell', value: 'Cell' },
-            { label: 'F: Fax', value: 'Fax' }
-          ]
+            { label: 'T: Telephone', value: 'Telephone', code: 'T' },
+            { label: 'D: Direct', value: 'Direct', code: 'D' },
+            { label: 'M: Mobile', value: 'Mobile', code: 'M' },
+            { label: 'C: Cell', value: 'Cell', code: 'C' },
+            { label: 'F: Fax', value: 'Fax', code: 'F' }
+          ],
+          variationPrefix: ''
         },
         front: {
           backgroundColor: '#ffffff',
@@ -52,12 +53,13 @@ export const BRAND_CONFIGS: Record<string, BrandConfig> = {
         phoneNumberConfig: {
           maxPhones: 1,
           allowedTypes: [
-            { label: 'T: Telephone', value: 'Telephone' },
-            { label: 'D: Direct', value: 'Direct' },
-            { label: 'M: Mobile', value: 'Mobile' },
-            { label: 'C: Cell', value: 'Cell' },
-            { label: 'F: Fax', value: 'Fax' }
-          ]
+            { label: 'T: Telephone', value: 'Telephone', code: 'T' },
+            { label: 'D: Direct', value: 'Direct', code: 'D' },
+            { label: 'M: Mobile', value: 'Mobile', code: 'M' },
+            { label: 'C: Cell', value: 'Cell', code: 'C' },
+            { label: 'F: Fax', value: 'Fax', code: 'F' }
+          ],
+          variationPrefix: ''
         },
         front: {
           backgroundColor: '#ffffff',
@@ -89,12 +91,13 @@ export const BRAND_CONFIGS: Record<string, BrandConfig> = {
         phoneNumberConfig: {
           maxPhones: 1,
           allowedTypes: [
-            { label: 'T: Telephone', value: 'Telephone' },
-            { label: 'D: Direct', value: 'Direct' },
-            { label: 'M: Mobile', value: 'Mobile' },
-            { label: 'C: Cell', value: 'Cell' },
-            { label: 'F: Fax', value: 'Fax' }
-          ]
+            { label: 'T: Telephone', value: 'Telephone', code: 'T' },
+            { label: 'D: Direct', value: 'Direct', code: 'D' },
+            { label: 'M: Mobile', value: 'Mobile', code: 'M' },
+            { label: 'C: Cell', value: 'Cell', code: 'C' },
+            { label: 'F: Fax', value: 'Fax', code: 'F' }
+          ],
+          variationPrefix: ''
         },
         front: {
           backgroundColor: '#003fa7',

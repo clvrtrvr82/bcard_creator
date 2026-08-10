@@ -42,6 +42,7 @@ export interface ConditionalRule {
 export interface PhoneNumberTypeOption {
   label: string;
   value: string;
+  code: string;
 }
 
 export interface FieldStyle {
@@ -108,6 +109,7 @@ export interface PhoneNumberEntry {
 export interface PhoneNumberConfig {
   maxPhones: number;
   allowedTypes: PhoneNumberTypeOption[];
+  variationPrefix?: string;
 }
 
 export interface Layout {

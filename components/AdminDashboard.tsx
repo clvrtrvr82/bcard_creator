@@ -47,11 +47,11 @@ const createBlankBrandConfig = (brand: string): BrandConfig => ({
 });
 
 const DEFAULT_PHONE_TYPE_OPTIONS: PhoneNumberTypeOption[] = [
-  { label: 'T: Telephone', value: 'Telephone' },
-  { label: 'D: Direct', value: 'Direct' },
-  { label: 'M: Mobile', value: 'Mobile' },
-  { label: 'C: Cell', value: 'Cell' },
-  { label: 'F: Fax', value: 'Fax' }
+  { label: 'T: Telephone', value: 'Telephone', code: 'T' },
+  { label: 'D: Direct', value: 'Direct', code: 'D' },
+  { label: 'M: Mobile', value: 'Mobile', code: 'M' },
+  { label: 'C: Cell', value: 'Cell', code: 'C' },
+  { label: 'F: Fax', value: 'Fax', code: 'F' }
 ];
 
 const createLayoutTemplate = (brand: string): Layout => ({
@@ -62,7 +62,8 @@ const createLayoutTemplate = (brand: string): Layout => ({
   previewUrl: '',
   phoneNumberConfig: {
     maxPhones: 1,
-    allowedTypes: DEFAULT_PHONE_TYPE_OPTIONS
+    allowedTypes: DEFAULT_PHONE_TYPE_OPTIONS,
+    variationPrefix: ''
   },
   shopifyProductHandle: '',
   front: {

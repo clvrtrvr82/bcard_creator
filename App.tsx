@@ -320,7 +320,16 @@ const buildPhoneSetupEntries = (allowedTypes: PhoneNumberTypeOption[], count: nu
   return Array.from({ length: Math.max(0, count) }, () => ({ type: fallbackType, value: '' }));
 };
 
-const resolvePhoneSetupLayout = (selectedLayout: Layout, count: number, brandConfigs: Record<string, BrandConfig>) => {
+const getPhoneSetupSignature = (entries: PhoneNumberEntry[], allowedTypes: PhoneNumberTypeOption[]) => {
+  const codeMap = new Map(allowedTypes.map((option) => [option.value, option.code || option.value.charAt(0).toUpperCase()]));
+  return entries
+    .map((entry) => codeMap.get(entry.type) || entry.type.charAt(0).toUpperCase())
+    .join('')
+    .trim()
+    .toUpperCase();
+};
+
+const resolvePhoneSetupLayout = (selectedLayout: Layout, entries: PhoneNumberEntry[], count: number, brandConfigs: Record<string, BrandConfig>) => {
   const allLayouts = Object.values(brandConfigs).flatMap((config) => config.layouts);
   const matches = allLayouts.filter((layout) => (layout.phoneNumberConfig?.maxPhones || 0) >= count);
   const sameBrand = matches.filter((layout) => String(layout.brand) === String(selectedLayout.brand));
@@ -328,10 +337,17 @@ const resolvePhoneSetupLayout = (selectedLayout: Layout, count: number, brandCon
     const selectedTags = new Set((selectedLayout.shopifyTags || []).map((tag) => tag.toLowerCase()));
     return (candidate.shopifyTags || []).some((tag) => selectedTags.has(tag.toLowerCase()));
   };
+  const selectedPrefix = getPhoneSetupSignature(entries, selectedLayout.phoneNumberConfig?.allowedTypes || []);
+
+  const samePrefix = (candidate: Layout) => String(candidate.phoneNumberConfig?.variationPrefix || '').trim().toUpperCase() === selectedPrefix;
 
   const prioritized = [
+    ...sameBrand.filter((layout) => sameTags(layout) && samePrefix(layout)),
+    ...sameBrand.filter(samePrefix),
     ...sameBrand.filter(sameTags),
     ...sameBrand,
+    ...matches.filter((layout) => layout.id !== selectedLayout.id && sameTags(layout) && samePrefix(layout)),
+    ...matches.filter((layout) => layout.id !== selectedLayout.id && samePrefix(layout)),
     ...matches.filter((layout) => layout.id !== selectedLayout.id && sameTags(layout)),
     ...matches
   ].filter((layout, index, array) => array.findIndex((item) => item.id === layout.id) === index);
@@ -1695,13 +1711,13 @@ const CustomizerScreen = ({ layout, onBack, onComplete, settings, productHandle,
     document.body.removeChild(anchor);
   };
 
-  const proofBaseName = layout.name.replace(/\s+/g, '-');
+  const exportBaseName = layout.name.replace(/\s+/g, '-');
 
   const handleDownloadProofJpg = async () => {
     setProofStatus('generating');
     try {
       const canvas = await capturePreview({ watermark: true, scale: 1.1 });
-      downloadCanvasImage(canvas, `${proofBaseName}-Proof.jpg`, 0.8);
+      downloadCanvasImage(canvas, `${exportBaseName}-PRINT_READY.jpg`, 0.8);
     } catch (error) {
       console.error('Unable to export JPG proof', error);
       alert('Unable to generate proof. Please try again.');
@@ -1715,7 +1731,7 @@ const CustomizerScreen = ({ layout, onBack, onComplete, settings, productHandle,
     try {
       const canvas = await capturePreview({ watermark: true, scale: 1.1 });
       const pdf = pdfFromCanvas(canvas, 0.6);
-      pdf.save(`${proofBaseName}-Proof.pdf`);
+      pdf.save(`${exportBaseName}-PRINT_READY.pdf`);
     } catch (error) {
       console.error('Unable to export proof', error);
       alert('Unable to generate proof. Please try again.');
@@ -1734,7 +1750,7 @@ const CustomizerScreen = ({ layout, onBack, onComplete, settings, productHandle,
       exports.forEach(({ suffix, sideName, side }) => {
         const sideData = getRenderDataForSide(sideName, data);
         const svg = buildCardSvg({ side, data: sideData, settings, fontAssets: layout.fontAssets || [] });
-        downloadTextFile(`${proofBaseName}-${suffix}.svg`, svg, 'image/svg+xml;charset=utf-8');
+        downloadTextFile(`${exportBaseName}-${suffix}.svg`, svg, 'image/svg+xml;charset=utf-8');
       });
     } catch (error) {
       console.error('Unable to export vector artwork', error);
@@ -2071,7 +2087,7 @@ const CustomizerScreen = ({ layout, onBack, onComplete, settings, productHandle,
             {isAdmin && (
               <>
                 <button onClick={handleDownloadProofPdf} className="px-4 py-2 rounded-xl bg-slate-900 text-white text-xs font-black uppercase tracking-[0.3em] flex items-center gap-2" disabled={proofStatus === 'generating'}>
-                  <Download size={14} /> {proofStatus === 'generating' ? 'Preparing...' : 'Download Proof PDF'}
+                  <Download size={14} /> {proofStatus === 'generating' ? 'Preparing...' : 'Download Print Ready PDF'}
                 </button>
                 <button onClick={handleDownloadVector} className="px-4 py-2 rounded-xl bg-slate-900 text-white text-xs font-black uppercase tracking-[0.3em] flex items-center gap-2" disabled={proofStatus === 'generating'}>
                   <Download size={14} /> {proofStatus === 'generating' ? 'Preparing...' : 'Download Vector SVG'}
@@ -2281,7 +2297,7 @@ const MainLayout = () => {
 
   const handlePhoneSetupConfirm = useCallback(() => {
     if (!phoneSetupLayout) return;
-    const resolvedLayout = resolvePhoneSetupLayout(phoneSetupLayout, phoneSetupCount, brandConfigs);
+    const resolvedLayout = resolvePhoneSetupLayout(phoneSetupLayout, phoneSetupEntries, phoneSetupCount, brandConfigs);
     const allowedTypes = resolvedLayout.phoneNumberConfig?.allowedTypes || phoneSetupLayout.phoneNumberConfig?.allowedTypes || [];
     const normalizedEntries = Array.from({ length: phoneSetupCount }, (_, index) => {
       const entry = phoneSetupEntries[index] || { type: allowedTypes[0]?.value || 'Telephone', value: '' };
@@ -2303,12 +2319,12 @@ const MainLayout = () => {
 
   const phoneSetupResolveMessage = useMemo(() => {
     if (!phoneSetupLayout) return '';
-    const resolved = resolvePhoneSetupLayout(phoneSetupLayout, phoneSetupCount, brandConfigs);
+    const resolved = resolvePhoneSetupLayout(phoneSetupLayout, phoneSetupEntries, phoneSetupCount, brandConfigs);
     if (resolved.id === phoneSetupLayout.id) {
       return `This setup fits ${phoneSetupLayout.name}.`;
     }
     return `This setup will switch you to ${resolved.name}.`;
-  }, [brandConfigs, phoneSetupCount, phoneSetupLayout]);
+  }, [brandConfigs, phoneSetupCount, phoneSetupEntries, phoneSetupLayout]);
 
   const loadingScreen = (
     <div className="max-w-4xl mx-auto px-6 py-20 text-center animate-fadeIn">
