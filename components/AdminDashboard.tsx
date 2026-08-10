@@ -54,7 +54,7 @@ const DEFAULT_PHONE_TYPE_OPTIONS: PhoneNumberTypeOption[] = [
   { label: 'F: Fax', value: 'Fax', code: 'F' }
 ];
 
-const createLayoutTemplate = (brand: string): Layout => ({
+const createLayoutTemplate = (brand: string, groupId: string): Layout => ({
   id: `layout-${Date.now()}`,
   brand,
   canvasVersion: CARD_CANVAS_VERSION,
@@ -65,7 +65,7 @@ const createLayoutTemplate = (brand: string): Layout => ({
     maxPhones: 1,
     allowedTypes: DEFAULT_PHONE_TYPE_OPTIONS,
     variationPrefix: '',
-    variantGroupId: ''
+    variantGroupId: groupId
   },
   shopifyProductHandle: '',
   front: {
@@ -78,6 +78,9 @@ const createLayoutTemplate = (brand: string): Layout => ({
 
 const cloneConfigs = (configs: Record<string, BrandConfig>): Record<string, BrandConfig> => JSON.parse(JSON.stringify(configs));
 const cloneLayout = (layout: Layout): Layout => JSON.parse(JSON.stringify(layout));
+const normalizeGroupId = (value: string) => value.trim().toLowerCase().replace(/\s+/g, '-');
+const getLayoutGroupId = (layout: Layout) => normalizeGroupId(layout.phoneNumberConfig?.variantGroupId || '');
+const formatGroupLabel = (groupId: string) => groupId.split('-').filter(Boolean).map((part) => part.charAt(0).toUpperCase() + part.slice(1)).join(' ') || 'Ungrouped';
 const ensureBrandBucket = (clone: Record<string, BrandConfig>, brand: string) => {
   if (!clone[brand]) {
     clone[brand] = createBlankBrandConfig(brand);
@@ -156,6 +159,9 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({ brandConfigs, onBrandCo
   const [proofSearch, setProofSearch] = useState('');
   const [proofEmailFilter, setProofEmailFilter] = useState<'all' | 'sent' | 'unsent'>('all');
   const [proofRefreshToken, setProofRefreshToken] = useState(0);
+  const [selectedGroupId, setSelectedGroupId] = useState('');
+  const [newGroupName, setNewGroupName] = useState('');
+  const [expandedGroups, setExpandedGroups] = useState<Record<string, boolean>>({});
   const importFileRef = useRef<HTMLInputElement>(null);
 
   const allLayouts = useMemo(() => Object.entries(brandConfigs).flatMap(([brandKey, config]) => config.layouts.map((layout) => ({ ...layout, brand: layout.brand ?? brandKey }))), [brandConfigs]);
@@ -218,6 +224,29 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({ brandConfigs, onBrandCo
     if (!query) return allLayouts;
     return allLayouts.filter((layout) => layout.name.toLowerCase().includes(query));
   }, [allLayouts, search]);
+
+  const availableGroupIds = useMemo(() => {
+    const ids = new Set<string>();
+    allLayouts.forEach((layout) => {
+      const groupId = getLayoutGroupId(layout);
+      if (groupId) ids.add(groupId);
+    });
+    return Array.from(ids).sort((left, right) => left.localeCompare(right));
+  }, [allLayouts]);
+
+  const groupedFilteredLayouts = useMemo(() => {
+    return filteredLayouts.reduce<Record<string, Layout[]>>((acc, layout) => {
+      const groupId = getLayoutGroupId(layout) || 'ungrouped';
+      if (!acc[groupId]) acc[groupId] = [];
+      acc[groupId].push(layout);
+      return acc;
+    }, {});
+  }, [filteredLayouts]);
+
+  useEffect(() => {
+    if (selectedGroupId && availableGroupIds.includes(selectedGroupId)) return;
+    setSelectedGroupId(availableGroupIds[0] || '');
+  }, [availableGroupIds, selectedGroupId]);
 
   const filteredProofRecords = useMemo(() => {
     const query = proofSearch.trim().toLowerCase();
@@ -284,8 +313,13 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({ brandConfigs, onBrandCo
   };
 
   const handleAddLayout = () => {
+    const normalizedGroupId = normalizeGroupId(selectedGroupId);
+    if (!normalizedGroupId) {
+      pushError('Create and select a layout group before creating a new layout.');
+      return;
+    }
     const brand = getDefaultBrandKey();
-    const template = createLayoutTemplate(brand);
+    const template = createLayoutTemplate(brand, normalizedGroupId);
     const clone = cloneConfigs(brandConfigs);
     ensureBrandBucket(clone, brand);
     clone[brand].layouts = [...clone[brand].layouts, template];
@@ -293,6 +327,39 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({ brandConfigs, onBrandCo
     setSelectedLayoutId(template.id);
     setWorkingLayout(cloneLayout(template));
     pushMessage('Layout scaffold generated.');
+  };
+
+  const handleCreateGroup = () => {
+    const normalizedGroupId = normalizeGroupId(newGroupName);
+    if (!normalizedGroupId) {
+      pushError('Enter a group name first.');
+      return;
+    }
+    setSelectedGroupId(normalizedGroupId);
+    setExpandedGroups((prev) => ({ ...prev, [normalizedGroupId]: true }));
+    setNewGroupName('');
+    pushMessage(`Group ${formatGroupLabel(normalizedGroupId)} is ready. Create layouts inside it.`);
+  };
+
+  const handleAssignWorkingLayoutGroup = (groupId: string) => {
+    if (!workingLayout) return;
+    const normalizedGroupId = normalizeGroupId(groupId);
+    if (!normalizedGroupId) return;
+
+    const nextLayout: Layout = {
+      ...workingLayout,
+      phoneNumberConfig: {
+        maxPhones: workingLayout.phoneNumberConfig?.maxPhones || 1,
+        allowedTypes: workingLayout.phoneNumberConfig?.allowedTypes?.length ? workingLayout.phoneNumberConfig.allowedTypes : DEFAULT_PHONE_TYPE_OPTIONS,
+        variationPrefix: workingLayout.phoneNumberConfig?.variationPrefix || '',
+        variantGroupId: normalizedGroupId
+      }
+    };
+
+    setSelectedGroupId(normalizedGroupId);
+    setExpandedGroups((prev) => ({ ...prev, [normalizedGroupId]: true }));
+    handleWorkingLayoutChange(nextLayout);
+    setWorkingLayout(nextLayout);
   };
 
   const handleSaveLayout = () => {
@@ -457,15 +524,33 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({ brandConfigs, onBrandCo
   const renderLayoutList = () => (
     <div className="bg-white border border-slate-100 rounded-[20px] p-3 space-y-2.5 max-h-[360px] overflow-y-auto">
       {filteredLayouts.length === 0 && <p className="text-center text-slate-400 text-sm">No layouts match that search.</p>}
-      {filteredLayouts.map((layout) => (
-        <button
-          key={layout.id}
-          onClick={() => handleSelectLayout(layout.id)}
-          className={`w-full text-left p-3 rounded-2xl border transition-all ${selectedLayoutId === layout.id ? 'border-blue-500 bg-blue-50 text-blue-900' : 'border-transparent bg-slate-50 text-slate-600'}`}
-        >
-          <p className="text-sm font-black uppercase tracking-wide">{layout.name}</p>
-        </button>
-      ))}
+      {Object.entries(groupedFilteredLayouts).sort(([left], [right]) => left.localeCompare(right)).map(([groupId, layouts]) => {
+        const isExpanded = expandedGroups[groupId] ?? groupId === selectedGroupId;
+        return (
+          <div key={groupId} className="rounded-2xl border border-slate-200 bg-slate-50 p-2.5 space-y-2">
+            <button
+              type="button"
+              onClick={() => {
+                setExpandedGroups((prev) => ({ ...prev, [groupId]: !isExpanded }));
+                setSelectedGroupId(groupId);
+              }}
+              className="w-full flex items-center justify-between px-2 py-1.5 text-left"
+            >
+              <span className="text-[11px] font-black uppercase tracking-[0.24em] text-slate-500">{formatGroupLabel(groupId)}</span>
+              <span className="text-[11px] font-semibold text-slate-400">{layouts.length}</span>
+            </button>
+            {isExpanded && layouts.map((layout) => (
+              <button
+                key={layout.id}
+                onClick={() => handleSelectLayout(layout.id)}
+                className={`w-full text-left p-3 rounded-2xl border transition-all ${selectedLayoutId === layout.id ? 'border-blue-500 bg-blue-50 text-blue-900' : 'border-transparent bg-white text-slate-600'}`}
+              >
+                <p className="text-sm font-black uppercase tracking-wide">{layout.name}</p>
+              </button>
+            ))}
+          </div>
+        );
+      })}
     </div>
   );
 
@@ -483,9 +568,30 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({ brandConfigs, onBrandCo
         </div>
         {renderLayoutList()}
         <div className="bg-white border border-slate-100 rounded-[20px] p-4 space-y-3">
-          <p className="text-sm font-bold text-slate-900">Need a fresh canvas?</p>
-          <p className="text-xs text-slate-500 leading-relaxed">Generate a blank drag-and-drop layout, give it a title, then tune the field placement.</p>
-          <button onClick={handleAddLayout} className="w-full flex items-center justify-center gap-2 py-2.5 rounded-xl bg-blue-600 text-white text-[11px] font-black uppercase tracking-[0.3em]">
+          <p className="text-sm font-bold text-slate-900">Create Group First</p>
+          <p className="text-xs text-slate-500 leading-relaxed">Create/select a group, then add all layout variations into that same group.</p>
+          <div className="space-y-2">
+            <input
+              value={newGroupName}
+              onChange={(event) => setNewGroupName(event.target.value)}
+              placeholder="New group name"
+              className="w-full px-3.5 py-2.5 rounded-xl bg-slate-50 border border-slate-200 text-sm"
+            />
+            <button onClick={handleCreateGroup} className="w-full flex items-center justify-center gap-2 py-2.5 rounded-xl border border-slate-200 bg-white text-[11px] font-black uppercase tracking-[0.3em] text-slate-700">
+              Create Group
+            </button>
+            <select
+              value={selectedGroupId}
+              onChange={(event) => setSelectedGroupId(normalizeGroupId(event.target.value))}
+              className="w-full px-3.5 py-2.5 rounded-xl bg-slate-50 border border-slate-200 text-sm"
+            >
+              {!availableGroupIds.length && <option value="">No groups yet</option>}
+              {availableGroupIds.map((groupId) => (
+                <option key={groupId} value={groupId}>{formatGroupLabel(groupId)}</option>
+              ))}
+            </select>
+          </div>
+          <button onClick={handleAddLayout} disabled={!selectedGroupId} className="w-full flex items-center justify-center gap-2 py-2.5 rounded-xl bg-blue-600 text-white text-[11px] font-black uppercase tracking-[0.3em] disabled:opacity-50 disabled:cursor-not-allowed">
             <Plus size={16} /> Create Layout
           </button>
         </div>
@@ -503,6 +609,15 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({ brandConfigs, onBrandCo
               <button onClick={handleDeleteLayout} className="px-4 py-2.5 rounded-xl bg-red-50 text-red-600 text-[11px] font-black uppercase tracking-[0.3em] flex items-center gap-2">
                 <Trash2 size={16} /> Remove
               </button>
+              <select
+                value={getLayoutGroupId(workingLayout)}
+                onChange={(event) => handleAssignWorkingLayoutGroup(event.target.value)}
+                className="px-3 py-2.5 rounded-xl border border-slate-200 bg-white text-[11px] font-black uppercase tracking-[0.18em] text-slate-600"
+              >
+                {availableGroupIds.map((groupId) => (
+                  <option key={groupId} value={groupId}>{formatGroupLabel(groupId)}</option>
+                ))}
+              </select>
             </div>
             <LayoutEditor layout={workingLayout} onChange={handleWorkingLayoutChange} settings={settings} onOpenAssets={handleOpenAssets} />
           </>
