@@ -20,6 +20,10 @@ export const BRAND_CONFIGS: Record<string, BrandConfig> = {
         name: 'HOLIDAY INN V2',
         shopifyTags: ['holiday-inn-card', 'holiday-inn-v2', 'hi-bcard'],
         previewUrl: '',
+        phoneNumberConfig: {
+          maxPhones: 2,
+          allowedTypes: ['Telephone', 'Direct', 'Mobile', 'Cell', 'Phone']
+        },
         front: {
           backgroundColor: '#ffffff',
           fields: {
@@ -39,6 +43,10 @@ export const BRAND_CONFIGS: Record<string, BrandConfig> = {
         name: 'HOLIDAY INN',
         shopifyTags: ['holiday-inn-card', 'holiday-inn', 'hi-bcard'],
         previewUrl: '',
+        phoneNumberConfig: {
+          maxPhones: 1,
+          allowedTypes: ['Telephone', 'Direct', 'Mobile', 'Cell', 'Phone']
+        },
         front: {
           backgroundColor: '#ffffff',
           fields: {
@@ -66,6 +74,10 @@ export const BRAND_CONFIGS: Record<string, BrandConfig> = {
         name: 'HOLIDAY INN EXPRESS',
         shopifyTags: ['holiday-inn-express-card', 'holiday-inn-express', 'hi-bcard'],
         previewUrl: '',
+        phoneNumberConfig: {
+          maxPhones: 1,
+          allowedTypes: ['Telephone', 'Direct', 'Mobile', 'Cell', 'Phone']
+        },
         front: {
           backgroundColor: '#003fa7',
           fields: {

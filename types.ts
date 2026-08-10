@@ -95,6 +95,16 @@ export interface SideLayout {
   fieldOrder: string[];
 }
 
+export interface PhoneNumberEntry {
+  type: string;
+  value: string;
+}
+
+export interface PhoneNumberConfig {
+  maxPhones: number;
+  allowedTypes: string[];
+}
+
 export interface Layout {
   id: string;
   brand: BrandKey;
@@ -110,6 +120,7 @@ export interface Layout {
   fontAssets?: FontAsset[];
   colorPresets?: ColorPreset[];
   shopifyProductHandle?: string;
+  phoneNumberConfig?: PhoneNumberConfig;
   front: SideLayout;
   back?: SideLayout;
 }
@@ -125,6 +136,7 @@ export interface CardData {
   website: string;
   brand: BrandKey;
   layoutId: string;
+  phoneNumbers?: PhoneNumberEntry[];
   customValues?: Record<string, string>;
 }
 

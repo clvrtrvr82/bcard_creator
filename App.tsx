@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useMemo, useCallback, useRef } from 'react';
 import { BrowserRouter, Routes, Route, Link, useNavigate } from 'react-router-dom';
-import { CardData, Layout, AppSettings, BrandConfig, ColorPreset, SideLayout, FieldStyle, FontAsset, CMYK } from './types';
+import { CardData, Layout, AppSettings, BrandConfig, ColorPreset, SideLayout, FieldStyle, FontAsset, CMYK, PhoneNumberConfig, PhoneNumberEntry } from './types';
 import { BRAND_CONFIGS } from './constants';
 import { CARD_CANVAS_VERSION, CARD_HEIGHT, CARD_WIDTH, convertLegacyDisplayScale, normalizeFieldStyle } from './cardCanvas';
 import { loadPersistedLayouts, persistLayouts } from './persistence';
@@ -22,6 +22,7 @@ import {
 const SETTINGS_KEY = 'theme-vault-settings';
 const LAYOUT_STORAGE_KEY = 'theme-vault-layouts';
 const SHOPIFY_CART_ENABLED = import.meta.env?.VITE_ENABLE_SHOPIFY_CART === 'true';
+const SHOPIFY_CART_ID_STORAGE_KEY = 'theme-vault-shopify-cart-id';
 const SHOPIFY_TAG_LOOKUP_ENABLED = import.meta.env?.VITE_ENABLE_SHOPIFY_TAG_LOOKUP === 'true';
 const isBrowser = typeof window !== 'undefined';
 const safeLocalStorage = isBrowser ? window.localStorage : null;
@@ -290,6 +291,27 @@ const buildReturnUrl = (target: string, params: Record<string, string | null | u
   return url.toString();
 };
 
+const createInitialCardData = (layout: Layout): CardData => {
+  const phoneNumberConfig = layout.phoneNumberConfig || { maxPhones: 1, allowedTypes: ['Phone'] };
+  const initialPhoneNumbers = phoneNumberConfig.maxPhones > 0
+    ? [{ type: phoneNumberConfig.allowedTypes[0] || 'Phone', value: '' }]
+    : [];
+
+  return {
+    brand: layout.brand,
+    layoutId: layout.id,
+    name: '',
+    jobTitle: '',
+    email: '',
+    phone: '',
+    mobile: '',
+    addressLine1: '',
+    website: '',
+    phoneNumbers: initialPhoneNumbers,
+    customValues: {}
+  };
+};
+
 const buildPreviewCardData = (layout: Layout): CardData => ({
   name: 'Jordan Lee',
   jobTitle: 'Brand Lead',
@@ -418,11 +440,12 @@ const ADDRESS_FIELD_KEYS = new Set(['addressLine1', 'addressLine2', 'address', '
 const AddressAutocomplete: React.FC<{
   value: string;
   onChange: (val: string) => void;
+  onFocus?: () => void;
   placeholder?: string;
   hasError?: boolean;
   ariaRequired?: boolean;
   ariaInvalid?: boolean;
-}> = ({ value, onChange, placeholder, hasError, ariaRequired, ariaInvalid }) => {
+}> = ({ value, onChange, onFocus, placeholder, hasError, ariaRequired, ariaInvalid }) => {
   const [suggestions, setSuggestions] = React.useState<string[]>([]);
   const [open, setOpen] = React.useState(false);
   const debounceRef = React.useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -467,7 +490,10 @@ const AddressAutocomplete: React.FC<{
       <input
         value={value}
         onChange={(e) => { onChange(e.target.value); fetchSuggestions(e.target.value); }}
-        onFocus={() => { if (suggestions.length) setOpen(true); }}
+        onFocus={() => {
+          onFocus?.();
+          if (suggestions.length) setOpen(true);
+        }}
         placeholder={placeholder}
         autoComplete="off"
         aria-required={ariaRequired || undefined}
@@ -1069,7 +1095,7 @@ const formatCurrency = (price: number) => new Intl.NumberFormat('en-US', { style
 
 const CustomizerScreen = ({ layout, onBack, onComplete, settings, productHandle, returnUrl, cartEnabled, cartReason, tagLookupEnabled, isAdmin }: { layout: Layout, onBack: () => void, onComplete: (data: CardData) => void, settings: AppSettings, productHandle: string | null, returnUrl: string | null, cartEnabled: boolean, cartReason?: string | null, tagLookupEnabled: boolean, isAdmin: boolean }) => {
   const [step, setStep] = useState<'form' | 'proof' | 'quantity'>('form');
-  const [data, setData] = useState<CardData>({ brand: layout.brand, layoutId: layout.id, name: '', jobTitle: '', email: '', phone: '', mobile: '', addressLine1: '', website: '', customValues: {} });
+  const [data, setData] = useState<CardData>(() => createInitialCardData(layout));
   const totalSteps = cartEnabled ? 3 : 2;
   const getStepPosition = (target: 'form' | 'proof' | 'quantity') => {
     if (target === 'form') return 1;
@@ -1115,6 +1141,7 @@ const CustomizerScreen = ({ layout, onBack, onComplete, settings, productHandle,
   const lockedFieldRefs = useMemo(() => allFieldRefs.filter((fieldRef) => getFieldDefinition(fieldRef)?.showInForm === false), [allFieldRefs, getFieldDefinition]);
   const hasBackSide = Boolean(layout.back);
   const previewSideLayout = previewSide === 'front' ? layout.front : layout.back || layout.front;
+  const phoneNumberConfig = useMemo<PhoneNumberConfig>(() => layout.phoneNumberConfig || { maxPhones: 1, allowedTypes: ['Phone'] }, [layout.phoneNumberConfig]);
   const canReturnToProduct = Boolean(returnUrl);
   const getFieldValue = useCallback((fieldRef: SideFieldRef, sourceData: CardData = data) => {
     const { side, key } = fieldRef;
@@ -1168,7 +1195,13 @@ const CustomizerScreen = ({ layout, onBack, onComplete, settings, productHandle,
 
   const returnToProductPage = useCallback((params?: Record<string, string | null | undefined>) => {
     if (!returnUrl) return;
-    window.location.href = buildReturnUrl(returnUrl, params || {});
+    try {
+      const parsed = new URL(returnUrl);
+      if (parsed.origin === window.location.origin) return;
+      window.location.href = buildReturnUrl(returnUrl, params || {});
+    } catch {
+      return;
+    }
   }, [returnUrl]);
 
   const buildLineItemProperties = useCallback((proof: { reference: string | null; proofUrl: string | null }) => {
@@ -1312,6 +1345,7 @@ const CustomizerScreen = ({ layout, onBack, onComplete, settings, productHandle,
 
   useEffect(() => {
     setPreviewSide('front');
+    setData(createInitialCardData(layout));
   }, [layout.id]);
 
   const updateField = (fieldRef: SideFieldRef, value: string) => {
@@ -1351,6 +1385,21 @@ const CustomizerScreen = ({ layout, onBack, onComplete, settings, productHandle,
       };
     });
   };
+
+  const updatePhoneNumberEntries = useCallback((nextEntries: PhoneNumberEntry[]) => {
+    setData((prev) => {
+      const normalizedEntries = nextEntries.filter((entry) => entry.value.trim() || entry.type.trim());
+      const firstValue = normalizedEntries.find((entry) => entry.value.trim())?.value || '';
+      const mobileLikeTypes = new Set(['Mobile', 'Cell', 'Mobile Phone', 'Cell Phone']);
+      const mobileValue = normalizedEntries.find((entry) => mobileLikeTypes.has(entry.type) && entry.value.trim())?.value || '';
+      return {
+        ...prev,
+        phone: firstValue,
+        mobile: mobileValue,
+        phoneNumbers: normalizedEntries
+      };
+    });
+  }, []);
 
   const handleFormAdvance = useCallback(() => {
     if (!formFieldRefs.length) {
@@ -1625,6 +1674,7 @@ const CustomizerScreen = ({ layout, onBack, onComplete, settings, productHandle,
       const proof = await uploadPrintReadyPdf();
       if (cartEnabled) {
         const payload = {
+          cartId: isBrowser ? safeLocalStorage?.getItem(SHOPIFY_CART_ID_STORAGE_KEY) || undefined : undefined,
           items: [
             {
               id: selectedVariant?.id,
@@ -1643,10 +1693,28 @@ const CustomizerScreen = ({ layout, onBack, onComplete, settings, productHandle,
           throw new Error(errorPayload?.message || 'Cart endpoint unavailable');
         }
         const result = await response.json();
+        if (result?.cartId && isBrowser) {
+          safeLocalStorage?.setItem(SHOPIFY_CART_ID_STORAGE_KEY, String(result.cartId));
+        }
         onComplete(data);
         const redirectUrl = result?.checkoutUrl || result?.redirectUrl;
         if (redirectUrl) {
-          window.location.href = redirectUrl;
+          try {
+            const checkoutUrl = new URL(redirectUrl);
+            const fallbackOrigin = (() => {
+              if (!returnUrl) return window.location.origin;
+              try {
+                const parsedReturn = new URL(returnUrl);
+                return `${parsedReturn.protocol}//${parsedReturn.host}`;
+              } catch {
+                return window.location.origin;
+              }
+            })();
+            checkoutUrl.searchParams.set('return_to', fallbackOrigin);
+            window.location.href = checkoutUrl.toString();
+          } catch {
+            window.location.href = redirectUrl;
+          }
         } else if (returnUrl) {
           returnToProductPage({
             cardify_status: 'cart_created',
@@ -1760,6 +1828,7 @@ const CustomizerScreen = ({ layout, onBack, onComplete, settings, productHandle,
                       <AddressAutocomplete
                         value={value}
                         onChange={(val) => updateField(fieldRef, val)}
+                        onFocus={() => setPreviewSide(fieldRef.side)}
                         placeholder={field.placeholder || `Enter ${field.label || fieldRef.key}`}
                         hasError={showError}
                         ariaRequired={isRequired || undefined}
@@ -1769,6 +1838,7 @@ const CustomizerScreen = ({ layout, onBack, onComplete, settings, productHandle,
                       <input
                         value={value}
                         onChange={(e) => updateField(fieldRef, e.target.value)}
+                        onFocus={() => setPreviewSide(fieldRef.side)}
                         placeholder={field.placeholder || `Enter ${field.label || fieldRef.key}`}
                         className={`w-full px-4 py-3 rounded-2xl text-sm font-medium text-slate-900 focus:bg-white focus:ring-4 outline-none ${showError ? 'bg-red-50 border border-red-300 focus:ring-red-200' : 'bg-slate-50 border border-slate-200 focus:ring-blue-100'}`}
                         aria-required={isRequired || undefined}
@@ -1783,6 +1853,56 @@ const CustomizerScreen = ({ layout, onBack, onComplete, settings, productHandle,
           ) : (
             <div className="rounded-2xl bg-slate-50 border border-dashed border-slate-200 p-4 text-sm text-slate-500">
               All visible fields are pre-filled for this layout. Continue to preview the proof.
+            </div>
+          )}
+          {phoneNumberConfig.maxPhones > 0 && (
+            <div className="rounded-2xl bg-slate-50 border border-slate-100 p-3 space-y-3">
+              <div className="flex items-center justify-between gap-3">
+                <p className="text-[11px] font-black uppercase tracking-[0.3em] text-slate-500">Phone numbers</p>
+                <span className="text-[10px] font-semibold text-slate-400">Max {phoneNumberConfig.maxPhones}</span>
+              </div>
+              <div className="space-y-2">
+                {(data.phoneNumbers || []).map((entry, index) => (
+                  <div key={`${entry.type}-${index}`} className="grid grid-cols-[120px_minmax(0,1fr)] gap-2">
+                    <select
+                      value={entry.type}
+                      onChange={(e) => {
+                        const nextEntries = [...(data.phoneNumbers || [])];
+                        nextEntries[index] = { ...entry, type: e.target.value };
+                        updatePhoneNumberEntries(nextEntries);
+                      }}
+                      className="px-3 py-2 rounded-xl border border-slate-200 bg-white text-sm font-medium text-slate-700"
+                    >
+                      {phoneNumberConfig.allowedTypes.map((type) => (
+                        <option key={type} value={type}>{type}</option>
+                      ))}
+                    </select>
+                    <input
+                      value={entry.value}
+                      onChange={(e) => {
+                        const nextEntries = [...(data.phoneNumbers || [])];
+                        nextEntries[index] = { ...entry, value: e.target.value };
+                        updatePhoneNumberEntries(nextEntries);
+                      }}
+                      onFocus={() => setPreviewSide('front')}
+                      placeholder="Enter number"
+                      className="w-full px-3 py-2 rounded-xl border border-slate-200 bg-white text-sm font-medium text-slate-900 focus:ring-4 focus:ring-blue-100 outline-none"
+                    />
+                  </div>
+                ))}
+              </div>
+              {((data.phoneNumbers || []).length < phoneNumberConfig.maxPhones) && (
+                <button
+                  type="button"
+                  onClick={() => {
+                    const nextEntries = [...(data.phoneNumbers || []), { type: phoneNumberConfig.allowedTypes[0] || 'Phone', value: '' }];
+                    updatePhoneNumberEntries(nextEntries.slice(0, phoneNumberConfig.maxPhones));
+                  }}
+                  className="text-[10px] font-black uppercase tracking-[0.3em] text-blue-600"
+                >
+                  Add another number
+                </button>
+              )}
             </div>
           )}
           {lockedFieldRefs.length > 0 && (
@@ -2247,9 +2367,6 @@ const MainLayout = () => {
             <p className="text-slate-500 font-bold text-sm md:text-base mt-2">Layouts, palettes, proofs, and production metadata in one compact workspace.</p>
           </div>
           <div className="flex flex-wrap gap-4 text-[11px] font-black uppercase tracking-[0.32em] text-slate-400">
-            <span>Brands: {Object.keys(brandConfigs).length}</span>
-            <span>|</span>
-            <span>Layouts: {Object.values(brandConfigs).reduce((total, cfg) => total + cfg.layouts.length, 0)}</span>
           </div>
         </div>
         <AdminDashboard

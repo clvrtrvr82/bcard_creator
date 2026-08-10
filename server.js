@@ -772,6 +772,7 @@ app.post('/cart/add.js', async (req, res) => {
     return res.status(400).json({ message: 'Missing Shopify cart items.' });
   }
 
+  const cartId = typeof req.body?.cartId === 'string' && req.body.cartId.trim() ? req.body.cartId.trim() : null;
   const lines = items
     .map((item) => {
       const variantId = Number(item?.id ?? 0);
@@ -792,12 +793,19 @@ app.post('/cart/add.js', async (req, res) => {
     return res.status(400).json({ message: 'Invalid Shopify variant IDs.' });
   }
 
-  const mutation = `mutation CartCreate($input: CartInput!) {
-    cartCreate(input: $input) {
-      cart { id checkoutUrl }
-      userErrors { field message }
-    }
-  }`;
+  const mutation = cartId
+    ? `mutation CartLinesAdd($cartId: ID!, $lines: [CartLineInput!]!) {
+        cartLinesAdd(cartId: $cartId, lines: $lines) {
+          cart { id checkoutUrl }
+          userErrors { field message }
+        }
+      }`
+    : `mutation CartCreate($input: CartInput!) {
+        cartCreate(input: $input) {
+          cart { id checkoutUrl }
+          userErrors { field message }
+        }
+      }`;
 
   try {
     const upstream = await fetch(SHOPIFY_GRAPHQL_URL, {
@@ -807,7 +815,7 @@ app.post('/cart/add.js', async (req, res) => {
         'Accept': 'application/json',
         'X-Shopify-Storefront-Access-Token': SHOPIFY_STOREFRONT_TOKEN
       },
-      body: JSON.stringify({ query: mutation, variables: { input: { lines } } })
+      body: JSON.stringify(cartId ? { query: mutation, variables: { cartId, lines } } : { query: mutation, variables: { input: { lines } } })
     });
 
     const payload = await upstream.json();
@@ -816,12 +824,16 @@ app.post('/cart/add.js', async (req, res) => {
       return res.status(502).json({ message: 'Shopify cart API unreachable.', detail: payload });
     }
 
-    const userErrors = payload?.data?.cartCreate?.userErrors;
+    const userErrors = cartId
+      ? payload?.data?.cartLinesAdd?.userErrors
+      : payload?.data?.cartCreate?.userErrors;
     if (userErrors?.length) {
       return res.status(400).json({ message: 'Shopify cart validation failed.', errors: userErrors });
     }
 
-    const cart = payload?.data?.cartCreate?.cart;
+    const cart = cartId
+      ? payload?.data?.cartLinesAdd?.cart
+      : payload?.data?.cartCreate?.cart;
     if (!cart?.checkoutUrl) {
       return res.status(502).json({ message: 'Shopify cart response missing checkout URL.', detail: payload });
     }
