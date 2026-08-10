@@ -417,7 +417,6 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({ brandConfigs, onBrandCo
   const totalLayouts = allLayouts.length;
   const taggedLayouts = allLayouts.filter((layout) => (layout.shopifyTags?.length || 0) > 0).length;
   const untaggedLayouts = Math.max(totalLayouts - taggedLayouts, 0);
-  const totalCustomFonts = allLayouts.reduce((acc, layout) => acc + (layout.customFonts?.length || 0), 0);
   const totalProofs = proofRecords.length;
   const linkedProducts = allLayouts.filter((layout) => layout.shopifyProductHandle).length;
   const renderOverview = () => (
@@ -433,9 +432,9 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({ brandConfigs, onBrandCo
         <p className="text-xs text-slate-400 mt-1">Layouts missing trigger tags</p>
       </div>
       <div className="p-6 rounded-[28px] bg-white border border-slate-100 shadow-xl">
-        <p className="text-slate-400 text-[11px] font-black uppercase tracking-[0.35em]">Saved Assets</p>
-        <p className="text-4xl font-black text-slate-900 mt-3">{totalCustomFonts}</p>
-        <p className="text-xs text-slate-400 mt-1">Global custom font entries</p>
+        <p className="text-slate-400 text-[11px] font-black uppercase tracking-[0.35em]">Linked Layouts</p>
+        <p className="text-4xl font-black text-slate-900 mt-3">{linkedProducts}</p>
+        <p className="text-xs text-slate-400 mt-1">Layouts assigned to a Shopify product</p>
       </div>
     </div>
   );
