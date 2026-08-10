@@ -110,6 +110,7 @@ export interface PhoneNumberConfig {
   maxPhones: number;
   allowedTypes: PhoneNumberTypeOption[];
   variationPrefix?: string;
+  variantGroupId?: string;
 }
 
 export interface Layout {
@@ -117,6 +118,7 @@ export interface Layout {
   brand: BrandKey;
   canvasVersion?: number;
   name: string;
+  customerVisible?: boolean;
   previewUrl: string;
   // Legacy layout-level preview fields. New layouts should use side-level previews.
   previewImage?: string;

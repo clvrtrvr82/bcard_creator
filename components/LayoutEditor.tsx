@@ -34,7 +34,8 @@ const PHONE_TYPE_OPTIONS: PhoneNumberTypeOption[] = [
 const createDefaultPhoneNumberConfig = (): PhoneNumberConfig => ({
   maxPhones: 1,
   allowedTypes: PHONE_TYPE_OPTIONS,
-  variationPrefix: ''
+  variationPrefix: '',
+  variantGroupId: ''
 });
 
 interface LayoutEditorProps {
@@ -1003,12 +1004,14 @@ const LayoutEditor: React.FC<LayoutEditorProps> = ({ layout, onChange, settings,
       const nextConfig: PhoneNumberConfig = {
         maxPhones: draft.phoneNumberConfig?.maxPhones || 1,
         allowedTypes: draft.phoneNumberConfig?.allowedTypes?.length ? draft.phoneNumberConfig.allowedTypes : PHONE_TYPE_OPTIONS,
-        variationPrefix: draft.phoneNumberConfig?.variationPrefix || ''
+        variationPrefix: draft.phoneNumberConfig?.variationPrefix || '',
+        variantGroupId: draft.phoneNumberConfig?.variantGroupId || ''
       };
       mutator(nextConfig);
       nextConfig.maxPhones = Math.max(1, Math.min(6, Math.round(nextConfig.maxPhones || 1)));
       nextConfig.allowedTypes = nextConfig.allowedTypes.length ? nextConfig.allowedTypes : PHONE_TYPE_OPTIONS;
       nextConfig.variationPrefix = String(nextConfig.variationPrefix || '').trim().toUpperCase();
+      nextConfig.variantGroupId = String(nextConfig.variantGroupId || '').trim().toLowerCase();
       draft.phoneNumberConfig = nextConfig;
     });
   };
@@ -1390,6 +1393,18 @@ const LayoutEditor: React.FC<LayoutEditorProps> = ({ layout, onChange, settings,
             <p className="text-[11px] font-black uppercase tracking-[0.3em] text-slate-400">Phone Number Setup</p>
             <p className="mt-1 text-xs text-slate-500">This is where you set the popup that appears after a layout is chosen.</p>
           </div>
+          <label className="flex items-center justify-between gap-3 rounded-xl border border-slate-200 bg-white px-4 py-3">
+            <div>
+              <p className="text-[11px] font-black uppercase tracking-[0.24em] text-slate-500">Main Customer Layout</p>
+              <p className="text-xs text-slate-500 mt-1">Only layouts with this enabled appear in the customer gallery.</p>
+            </div>
+            <input
+              type="checkbox"
+              checked={layout.customerVisible !== false}
+              onChange={(event) => commitLayout((draft) => { draft.customerVisible = event.target.checked; })}
+              className="h-5 w-5"
+            />
+          </label>
           <div className="grid grid-cols-1 gap-3 md:grid-cols-[160px_minmax(0,1fr)] md:items-center">
             <label className="text-[11px] font-black uppercase tracking-[0.3em] text-slate-400">Max Numbers</label>
             <input
@@ -1437,6 +1452,15 @@ const LayoutEditor: React.FC<LayoutEditorProps> = ({ layout, onChange, settings,
               value={phoneNumberConfig.variationPrefix || ''}
               onChange={(event) => handlePhoneNumberConfigChange((draft) => { draft.variationPrefix = event.target.value; })}
               placeholder="Example: TF or DM"
+              className="w-full rounded-2xl border border-slate-200 bg-white px-4 py-3 text-sm font-semibold text-slate-800"
+            />
+          </div>
+          <div className="grid grid-cols-1 gap-3 md:grid-cols-[160px_minmax(0,1fr)] md:items-center">
+            <label className="text-[11px] font-black uppercase tracking-[0.3em] text-slate-400">Variant Group ID</label>
+            <input
+              value={phoneNumberConfig.variantGroupId || ''}
+              onChange={(event) => handlePhoneNumberConfigChange((draft) => { draft.variantGroupId = event.target.value; })}
+              placeholder="Example: hie-frontdesk"
               className="w-full rounded-2xl border border-slate-200 bg-white px-4 py-3 text-sm font-semibold text-slate-800"
             />
           </div>

@@ -95,6 +95,21 @@ const normalizeColorPresets = (presets?: ColorPreset[] | string[]): ColorPreset[
     .filter(Boolean) as ColorPreset[];
 };
 
+const normalizePhoneNumberConfig = (layout: Layout) => {
+  const baseAllowedTypes = layout.phoneNumberConfig?.allowedTypes || [];
+  const normalizedAllowedTypes = baseAllowedTypes.map((option) => ({
+    ...option,
+    code: String(option.code || option.value?.charAt(0) || '').toUpperCase()
+  }));
+
+  return {
+    maxPhones: Math.max(1, Number(layout.phoneNumberConfig?.maxPhones || 1)),
+    allowedTypes: normalizedAllowedTypes,
+    variationPrefix: String(layout.phoneNumberConfig?.variationPrefix || '').trim().toUpperCase(),
+    variantGroupId: String(layout.phoneNumberConfig?.variantGroupId || '').trim().toLowerCase()
+  };
+};
+
 const normalizeLayout = (layout: Layout): Layout => {
   const normalizedBackFields = layout.back ? normalizeFields(layout.back.fields, layout.canvasVersion) : undefined;
   if (normalizedBackFields) {
@@ -110,7 +125,9 @@ const normalizeLayout = (layout: Layout): Layout => {
   return {
     ...layout,
     canvasVersion: CARD_CANVAS_VERSION,
+    customerVisible: layout.customerVisible !== false,
     shopifyProductHandle: layout.shopifyProductHandle || '',
+    phoneNumberConfig: normalizePhoneNumberConfig(layout),
     front: {
       ...layout.front,
       fields: normalizeFields(layout.front.fields, layout.canvasVersion),
@@ -329,9 +346,15 @@ const getPhoneSetupSignature = (entries: PhoneNumberEntry[], allowedTypes: Phone
     .toUpperCase();
 };
 
+  const sanitizePhoneDigits = (value: string) => value.replace(/\D+/g, '');
+
 const resolvePhoneSetupLayout = (selectedLayout: Layout, entries: PhoneNumberEntry[], count: number, brandConfigs: Record<string, BrandConfig>) => {
   const allLayouts = Object.values(brandConfigs).flatMap((config) => config.layouts);
-  const matches = allLayouts.filter((layout) => (layout.phoneNumberConfig?.maxPhones || 0) >= count);
+  const selectedGroupId = String(selectedLayout.phoneNumberConfig?.variantGroupId || '').trim().toLowerCase();
+  const groupPool = selectedGroupId
+    ? allLayouts.filter((layout) => String(layout.phoneNumberConfig?.variantGroupId || '').trim().toLowerCase() === selectedGroupId)
+    : allLayouts;
+  const matches = groupPool.filter((layout) => (layout.phoneNumberConfig?.maxPhones || 0) >= count);
   const sameBrand = matches.filter((layout) => String(layout.brand) === String(selectedLayout.brand));
   const sameTags = (candidate: Layout) => {
     const selectedTags = new Set((selectedLayout.shopifyTags || []).map((tag) => tag.toLowerCase()));
@@ -454,7 +477,7 @@ const PhoneNumberSetupModal = ({
 
 const SelectionScreen = ({ onNext, settings, brandConfigs, activeTags }: { onNext: (l: Layout) => void, settings: AppSettings, brandConfigs: Record<string, BrandConfig>, activeTags: string[] }) => {
   const [search, setSearch] = useState('');
-  const allLayouts = useMemo(() => Object.values(brandConfigs).flatMap(bc => bc.layouts), [brandConfigs]);
+  const allLayouts = useMemo(() => Object.values(brandConfigs).flatMap(bc => bc.layouts).filter((layout) => layout.customerVisible !== false), [brandConfigs]);
   const tagFilteredLayouts = useMemo(() => {
     if (!activeTags.length) return allLayouts;
     return allLayouts.filter((layout) => layout.shopifyTags?.some((tag) => activeTags.includes(tag.toLowerCase())));
@@ -1497,9 +1520,13 @@ const CustomizerScreen = ({ layout, onBack, onComplete, settings, productHandle,
   }, [layout.id]);
 
   const updateField = (fieldRef: SideFieldRef, value: string) => {
+    const normalizedValue = fieldRef.key === 'phone' || fieldRef.key === 'mobile'
+      ? sanitizePhoneDigits(value)
+      : value;
+
     setFieldErrors((prev) => {
       if (!prev[fieldRef.id]) return prev;
-      if (!value.trim()) return prev;
+      if (!normalizedValue.trim()) return prev;
       const next = { ...prev };
       delete next[fieldRef.id];
       return next;
@@ -1512,23 +1539,23 @@ const CustomizerScreen = ({ layout, onBack, onComplete, settings, productHandle,
           ...prev,
           customValues: {
             ...(prev.customValues || {}),
-            [sideValueKey]: value
+            [sideValueKey]: normalizedValue
           }
         };
       }
 
       if (fieldRef.key === 'addressLine1') {
-        return { ...prev, addressLine1: value };
+        return { ...prev, addressLine1: normalizedValue };
       }
       if (fieldRef.key in prev) {
-        return { ...prev, [fieldRef.key]: value } as CardData;
+        return { ...prev, [fieldRef.key]: normalizedValue } as CardData;
       }
       return {
         ...prev,
         customValues: {
           ...(prev.customValues || {}),
-          [fieldRef.key]: value,
-          [sideValueKey]: value
+          [fieldRef.key]: normalizedValue,
+          [sideValueKey]: normalizedValue
         }
       };
     });
@@ -1999,10 +2026,12 @@ const CustomizerScreen = ({ layout, onBack, onComplete, settings, productHandle,
                       value={entry.value}
                       onChange={(event) => {
                         const nextEntries = [...configuredPhoneNumbers];
-                        nextEntries[index] = { ...entry, value: event.target.value };
+                        nextEntries[index] = { ...entry, value: sanitizePhoneDigits(event.target.value) };
                         updatePhoneNumberEntries(nextEntries);
                       }}
                       placeholder={`Enter ${entry.type || 'phone'} number`}
+                      inputMode="numeric"
+                      pattern="[0-9]*"
                       className="w-full rounded-2xl border border-slate-200 bg-white px-4 py-3 text-sm font-medium text-slate-900 outline-none focus:ring-4 focus:ring-blue-100"
                     />
                   </div>

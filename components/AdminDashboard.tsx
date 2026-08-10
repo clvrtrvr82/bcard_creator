@@ -59,11 +59,13 @@ const createLayoutTemplate = (brand: string): Layout => ({
   brand,
   canvasVersion: CARD_CANVAS_VERSION,
   name: 'Untitled Layout',
+  customerVisible: true,
   previewUrl: '',
   phoneNumberConfig: {
     maxPhones: 1,
     allowedTypes: DEFAULT_PHONE_TYPE_OPTIONS,
-    variationPrefix: ''
+    variationPrefix: '',
+    variantGroupId: ''
   },
   shopifyProductHandle: '',
   front: {
