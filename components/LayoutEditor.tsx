@@ -1,5 +1,5 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
-import { Layout, FieldStyle, AppSettings, CardData, SideLayout, FontAsset, CMYK } from '../types';
+import { Layout, FieldStyle, AppSettings, CardData, SideLayout, FontAsset, CMYK, PhoneNumberConfig, PhoneNumberTypeOption } from '../types';
 import BusinessCardPreview from './BusinessCardPreview';
 import { Eye, EyeOff, Image as ImageIcon, Plus, Trash2, ChevronUp, ChevronDown, X, Copy } from 'lucide-react';
 import { cmykToHex, hexToCmyk, normalizeCmyk } from '../utils/color';
@@ -24,6 +24,17 @@ const TEXT_CASE_OPTIONS = [
   { label: 'Capitalize', value: 'capitalize' },
   { label: 'Lowercase', value: 'lowercase' }
 ] as const;
+const PHONE_TYPE_OPTIONS: PhoneNumberTypeOption[] = [
+  { label: 'T: Telephone', value: 'Telephone' },
+  { label: 'D: Direct', value: 'Direct' },
+  { label: 'M: Mobile', value: 'Mobile' },
+  { label: 'C: Cell', value: 'Cell' },
+  { label: 'F: Fax', value: 'Fax' }
+];
+const createDefaultPhoneNumberConfig = (): PhoneNumberConfig => ({
+  maxPhones: 1,
+  allowedTypes: PHONE_TYPE_OPTIONS
+});
 
 interface LayoutEditorProps {
   layout: Layout;
@@ -984,6 +995,21 @@ const LayoutEditor: React.FC<LayoutEditorProps> = ({ layout, onChange, settings,
     });
   };
 
+  const phoneNumberConfig = layout.phoneNumberConfig || createDefaultPhoneNumberConfig();
+
+  const handlePhoneNumberConfigChange = (mutator: (draft: PhoneNumberConfig) => void) => {
+    commitLayout((draft) => {
+      const nextConfig: PhoneNumberConfig = {
+        maxPhones: draft.phoneNumberConfig?.maxPhones || 1,
+        allowedTypes: draft.phoneNumberConfig?.allowedTypes?.length ? draft.phoneNumberConfig.allowedTypes : PHONE_TYPE_OPTIONS
+      };
+      mutator(nextConfig);
+      nextConfig.maxPhones = Math.max(1, Math.min(6, Math.round(nextConfig.maxPhones || 1)));
+      nextConfig.allowedTypes = nextConfig.allowedTypes.length ? nextConfig.allowedTypes : PHONE_TYPE_OPTIONS;
+      draft.phoneNumberConfig = nextConfig;
+    });
+  };
+
   const handleEnsureBackSide = () => {
     if (layout.back) return;
     commitLayout((draft) => {
@@ -1356,6 +1382,55 @@ const LayoutEditor: React.FC<LayoutEditorProps> = ({ layout, onChange, settings,
       </div>
 
       <div className="bg-white border border-slate-100 rounded-[24px] p-6 space-y-5">
+        <div className="space-y-3 rounded-2xl border border-slate-200 bg-slate-50 p-4">
+          <div>
+            <p className="text-[11px] font-black uppercase tracking-[0.3em] text-slate-400">Phone Number Setup</p>
+            <p className="mt-1 text-xs text-slate-500">This is where you set the popup that appears after a layout is chosen.</p>
+          </div>
+          <div className="grid grid-cols-1 gap-3 md:grid-cols-[160px_minmax(0,1fr)] md:items-center">
+            <label className="text-[11px] font-black uppercase tracking-[0.3em] text-slate-400">Max Numbers</label>
+            <input
+              type="number"
+              min={1}
+              max={6}
+              value={phoneNumberConfig.maxPhones}
+              onChange={(event) => handlePhoneNumberConfigChange((draft) => { draft.maxPhones = Number(event.target.value) || 1; })}
+              className="w-full rounded-2xl border border-slate-200 bg-white px-4 py-3 text-sm font-semibold text-slate-800"
+            />
+          </div>
+          <div className="space-y-2">
+            <p className="text-[11px] font-black uppercase tracking-[0.3em] text-slate-400">Popup Choices</p>
+            {(phoneNumberConfig.allowedTypes || PHONE_TYPE_OPTIONS).map((option, index) => (
+              <div key={`${option.value}-${index}`} className="grid grid-cols-1 gap-2 md:grid-cols-[120px_minmax(0,1fr)] md:items-center">
+                <span className="text-[11px] font-black uppercase tracking-[0.3em] text-slate-400">Type {index + 1}</span>
+                <div className="grid grid-cols-1 gap-2 md:grid-cols-[minmax(0,1fr)_minmax(0,1fr)]">
+                  <input
+                    value={option.label}
+                    onChange={(event) => handlePhoneNumberConfigChange((draft) => {
+                      const next = [...(draft.allowedTypes || PHONE_TYPE_OPTIONS)];
+                      next[index] = { ...next[index], label: event.target.value, value: next[index]?.value || event.target.value };
+                      draft.allowedTypes = next;
+                    })}
+                    placeholder="Label"
+                    className="w-full rounded-2xl border border-slate-200 bg-white px-4 py-3 text-sm font-semibold text-slate-800"
+                  />
+                  <input
+                    value={option.value}
+                    onChange={(event) => handlePhoneNumberConfigChange((draft) => {
+                      const next = [...(draft.allowedTypes || PHONE_TYPE_OPTIONS)];
+                      next[index] = { ...next[index], value: event.target.value };
+                      draft.allowedTypes = next;
+                    })}
+                    placeholder="Value"
+                    className="w-full rounded-2xl border border-slate-200 bg-white px-4 py-3 text-sm font-semibold text-slate-800"
+                  />
+                </div>
+              </div>
+            ))}
+          </div>
+          <p className="text-xs text-slate-500">The popup will show the count selector and these preset choices when the user picks a layout.</p>
+        </div>
+
         <div className="flex items-center justify-between gap-3 text-[10px] font-black uppercase tracking-[0.3em] text-slate-400">
           <span>Shopify Product Assignment</span>
           <button

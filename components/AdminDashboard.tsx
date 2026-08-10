@@ -1,5 +1,5 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
-import { AppSettings, BrandConfig, Layout } from '../types';
+import { AppSettings, BrandConfig, Layout, PhoneNumberTypeOption } from '../types';
 import LayoutEditor from './LayoutEditor';
 import LayoutAssetsEditor from './LayoutAssetsEditor';
 import { Search, Plus, Save, Trash2, Copy, Download, Upload, ExternalLink, FileText, LayoutTemplate, Palette, Settings as SettingsIcon } from 'lucide-react';
@@ -46,12 +46,24 @@ const createBlankBrandConfig = (brand: string): BrandConfig => ({
   layouts: []
 });
 
+const DEFAULT_PHONE_TYPE_OPTIONS: PhoneNumberTypeOption[] = [
+  { label: 'T: Telephone', value: 'Telephone' },
+  { label: 'D: Direct', value: 'Direct' },
+  { label: 'M: Mobile', value: 'Mobile' },
+  { label: 'C: Cell', value: 'Cell' },
+  { label: 'F: Fax', value: 'Fax' }
+];
+
 const createLayoutTemplate = (brand: string): Layout => ({
   id: `layout-${Date.now()}`,
   brand,
   canvasVersion: CARD_CANVAS_VERSION,
   name: 'Untitled Layout',
   previewUrl: '',
+  phoneNumberConfig: {
+    maxPhones: 1,
+    allowedTypes: DEFAULT_PHONE_TYPE_OPTIONS
+  },
   shopifyProductHandle: '',
   front: {
     backgroundColor: '#ffffff',
