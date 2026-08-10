@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useMemo, useCallback, useRef } from 'react';
 import { BrowserRouter, Routes, Route, Link, useNavigate } from 'react-router-dom';
-import { CardData, Layout, AppSettings, BrandConfig, ColorPreset, SideLayout, FieldStyle, FontAsset, CMYK, PhoneNumberConfig, PhoneNumberEntry } from './types';
+import { CardData, Layout, AppSettings, BrandConfig, ColorPreset, SideLayout, FieldStyle, FontAsset, CMYK, PhoneNumberEntry, PhoneNumberTypeOption } from './types';
 import { BRAND_CONFIGS } from './constants';
 import { CARD_CANVAS_VERSION, CARD_HEIGHT, CARD_WIDTH, convertLegacyDisplayScale, normalizeFieldStyle } from './cardCanvas';
 import { loadPersistedLayouts, persistLayouts } from './persistence';
@@ -291,11 +291,14 @@ const buildReturnUrl = (target: string, params: Record<string, string | null | u
   return url.toString();
 };
 
-const createInitialCardData = (layout: Layout): CardData => {
-  const phoneNumberConfig = layout.phoneNumberConfig || { maxPhones: 1, allowedTypes: ['Phone'] };
-  const initialPhoneNumbers = phoneNumberConfig.maxPhones > 0
-    ? [{ type: phoneNumberConfig.allowedTypes[0] || 'Phone', value: '' }]
-    : [];
+const createInitialCardData = (layout: Layout, phoneNumbers: PhoneNumberEntry[] = []): CardData => {
+  const initialPhoneNumbers = phoneNumbers.length
+    ? phoneNumbers
+    : (layout.phoneNumberConfig?.maxPhones || 0) > 0
+      ? [{ type: layout.phoneNumberConfig?.allowedTypes[0]?.value || 'Telephone', value: '' }]
+      : [];
+  const primaryPhone = initialPhoneNumbers.find((entry) => String(entry.value || '').trim())?.value || '';
+  const mobilePhone = initialPhoneNumbers.find((entry) => ['Mobile', 'Cell'].includes(String(entry.type || '')))?.value || '';
 
   return {
     brand: layout.brand,
@@ -303,13 +306,37 @@ const createInitialCardData = (layout: Layout): CardData => {
     name: '',
     jobTitle: '',
     email: '',
-    phone: '',
-    mobile: '',
+    phone: primaryPhone,
+    mobile: mobilePhone,
     addressLine1: '',
     website: '',
     phoneNumbers: initialPhoneNumbers,
     customValues: {}
   };
+};
+
+const buildPhoneSetupEntries = (allowedTypes: PhoneNumberTypeOption[], count: number) => {
+  const fallbackType = allowedTypes[0]?.value || 'Telephone';
+  return Array.from({ length: Math.max(0, count) }, () => ({ type: fallbackType, value: '' }));
+};
+
+const resolvePhoneSetupLayout = (selectedLayout: Layout, count: number, brandConfigs: Record<string, BrandConfig>) => {
+  const allLayouts = Object.values(brandConfigs).flatMap((config) => config.layouts);
+  const matches = allLayouts.filter((layout) => (layout.phoneNumberConfig?.maxPhones || 0) >= count);
+  const sameBrand = matches.filter((layout) => String(layout.brand) === String(selectedLayout.brand));
+  const sameTags = (candidate: Layout) => {
+    const selectedTags = new Set((selectedLayout.shopifyTags || []).map((tag) => tag.toLowerCase()));
+    return (candidate.shopifyTags || []).some((tag) => selectedTags.has(tag.toLowerCase()));
+  };
+
+  const prioritized = [
+    ...sameBrand.filter(sameTags),
+    ...sameBrand,
+    ...matches.filter((layout) => layout.id !== selectedLayout.id && sameTags(layout)),
+    ...matches
+  ].filter((layout, index, array) => array.findIndex((item) => item.id === layout.id) === index);
+
+  return prioritized[0] || selectedLayout;
 };
 
 const buildPreviewCardData = (layout: Layout): CardData => ({
@@ -327,6 +354,86 @@ const buildPreviewCardData = (layout: Layout): CardData => ({
 
 const getSelectionPreviewImage = (layout: Layout) => {
   return layout.front.previewImage || layout.previewImage;
+};
+
+const PhoneNumberSetupModal = ({
+  layout,
+  count,
+  entries,
+  maxCount,
+  onCountChange,
+  onEntryChange,
+  onCancel,
+  onConfirm,
+  resolveMessage
+}: {
+  layout: Layout;
+  count: number;
+  entries: PhoneNumberEntry[];
+  maxCount: number;
+  onCountChange: (count: number) => void;
+  onEntryChange: (index: number, next: PhoneNumberEntry) => void;
+  onCancel: () => void;
+  onConfirm: () => void;
+  resolveMessage: string;
+}) => {
+  const allowedTypes = layout.phoneNumberConfig?.allowedTypes || [];
+
+  return (
+    <div className="fixed inset-0 z-[120] flex items-center justify-center bg-slate-950/50 px-4 py-6 backdrop-blur-sm">
+      <div className="w-full max-w-xl rounded-[32px] bg-white p-6 shadow-2xl border border-slate-100 space-y-5 animate-fadeIn">
+        <div>
+          <p className="text-[11px] font-black uppercase tracking-[0.35em] text-slate-400">Phone setup</p>
+          <h3 className="mt-2 text-3xl font-black text-slate-900 uppercase tracking-tight">How many phone numbers?</h3>
+          <p className="mt-2 text-sm text-slate-500">Choose the number of phone slots and assign each one a type. The app will use that setup to pick the best matching layout.</p>
+        </div>
+
+        <div className="space-y-4">
+          <div className="grid grid-cols-1 gap-2 sm:grid-cols-[180px_minmax(0,1fr)] sm:items-center">
+            <label className="text-[11px] font-black uppercase tracking-[0.3em] text-slate-400">Phone Count</label>
+            <select
+              value={count}
+              onChange={(event) => onCountChange(Number(event.target.value))}
+              className="w-full rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm font-semibold text-slate-800 outline-none focus:ring-4 focus:ring-blue-500/10"
+            >
+              {Array.from({ length: Math.max(1, maxCount) }, (_, index) => index + 1).map((option) => (
+                <option key={option} value={option}>{option}</option>
+              ))}
+            </select>
+          </div>
+
+          <div className="space-y-3">
+            {Array.from({ length: count }, (_, index) => {
+              const entry = entries[index] || { type: allowedTypes[0]?.value || 'Telephone', value: '' };
+              return (
+                <div key={index} className="grid grid-cols-1 gap-2 sm:grid-cols-[180px_minmax(0,1fr)] sm:items-center">
+                  <label className="text-[11px] font-black uppercase tracking-[0.3em] text-slate-400">Line {index + 1}</label>
+                  <select
+                    value={entry.type}
+                    onChange={(event) => onEntryChange(index, { ...entry, type: event.target.value })}
+                    className="w-full rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm font-semibold text-slate-800 outline-none focus:ring-4 focus:ring-blue-500/10"
+                  >
+                    {allowedTypes.map((option) => (
+                      <option key={option.value} value={option.value}>{option.label}</option>
+                    ))}
+                  </select>
+                </div>
+              );
+            })}
+          </div>
+
+          <div className="rounded-2xl border border-blue-100 bg-blue-50 px-4 py-3 text-sm text-blue-900">
+            {resolveMessage}
+          </div>
+        </div>
+
+        <div className="flex flex-wrap justify-end gap-3">
+          <button onClick={onCancel} className="rounded-2xl border border-slate-200 px-5 py-3 text-[11px] font-black uppercase tracking-[0.3em] text-slate-500">Cancel</button>
+          <button onClick={onConfirm} className="rounded-2xl bg-slate-900 px-5 py-3 text-[11px] font-black uppercase tracking-[0.3em] text-white">Use Layout</button>
+        </div>
+      </div>
+    </div>
+  );
 };
 
 const SelectionScreen = ({ onNext, settings, brandConfigs, activeTags }: { onNext: (l: Layout) => void, settings: AppSettings, brandConfigs: Record<string, BrandConfig>, activeTags: string[] }) => {
@@ -1093,9 +1200,9 @@ const fetchWithTimeout = async (input: RequestInfo | URL, init: RequestInit = {}
 
 const formatCurrency = (price: number) => new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD' }).format(price / 100);
 
-const CustomizerScreen = ({ layout, onBack, onComplete, settings, productHandle, returnUrl, cartEnabled, cartReason, tagLookupEnabled, isAdmin }: { layout: Layout, onBack: () => void, onComplete: (data: CardData) => void, settings: AppSettings, productHandle: string | null, returnUrl: string | null, cartEnabled: boolean, cartReason?: string | null, tagLookupEnabled: boolean, isAdmin: boolean }) => {
+const CustomizerScreen = ({ layout, onBack, onComplete, settings, productHandle, returnUrl, cartEnabled, cartReason, tagLookupEnabled, isAdmin, initialPhoneNumbers }: { layout: Layout, onBack: () => void, onComplete: (data: CardData) => void, settings: AppSettings, productHandle: string | null, returnUrl: string | null, cartEnabled: boolean, cartReason?: string | null, tagLookupEnabled: boolean, isAdmin: boolean, initialPhoneNumbers?: PhoneNumberEntry[] }) => {
   const [step, setStep] = useState<'form' | 'proof' | 'quantity'>('form');
-  const [data, setData] = useState<CardData>(() => createInitialCardData(layout));
+  const [data, setData] = useState<CardData>(() => createInitialCardData(layout, initialPhoneNumbers));
   const totalSteps = cartEnabled ? 3 : 2;
   const getStepPosition = (target: 'form' | 'proof' | 'quantity') => {
     if (target === 'form') return 1;
@@ -1141,8 +1248,25 @@ const CustomizerScreen = ({ layout, onBack, onComplete, settings, productHandle,
   const lockedFieldRefs = useMemo(() => allFieldRefs.filter((fieldRef) => getFieldDefinition(fieldRef)?.showInForm === false), [allFieldRefs, getFieldDefinition]);
   const hasBackSide = Boolean(layout.back);
   const previewSideLayout = previewSide === 'front' ? layout.front : layout.back || layout.front;
-  const phoneNumberConfig = useMemo<PhoneNumberConfig>(() => layout.phoneNumberConfig || { maxPhones: 1, allowedTypes: ['Phone'] }, [layout.phoneNumberConfig]);
   const canReturnToProduct = Boolean(returnUrl);
+  const configuredPhoneNumbers = data.phoneNumbers || [];
+
+  const updatePhoneNumberEntries = useCallback((nextEntries: PhoneNumberEntry[]) => {
+    setData((prev) => {
+      const normalizedEntries = nextEntries.map((entry) => ({
+        type: String(entry.type || '').trim() || 'Telephone',
+        value: String(entry.value || '')
+      }));
+      const primaryPhone = normalizedEntries.find((entry) => entry.value.trim())?.value || '';
+      const mobilePhone = normalizedEntries.find((entry) => ['Mobile', 'Cell'].includes(entry.type) && entry.value.trim())?.value || '';
+      return {
+        ...prev,
+        phone: primaryPhone,
+        mobile: mobilePhone,
+        phoneNumbers: normalizedEntries
+      };
+    });
+  }, []);
   const getFieldValue = useCallback((fieldRef: SideFieldRef, sourceData: CardData = data) => {
     const { side, key } = fieldRef;
     const namespacedValue = sourceData.customValues?.[toSideValueKey(side, key)];
@@ -1217,6 +1341,14 @@ const CustomizerScreen = ({ layout, onBack, onComplete, settings, productHandle,
       properties[label] = value;
     });
 
+    configuredPhoneNumbers.forEach((entry, index) => {
+      const type = String(entry.type || '').trim();
+      const value = String(entry.value || '').trim();
+      if (!value) return;
+      properties[`Phone ${index + 1} Type`] = type || 'Phone';
+      properties[`Phone ${index + 1}`] = value;
+    });
+
     const privateProperties: Record<string, string> = {
       _cardify_layout_id: layout.id,
       _cardify_layout_name: layout.name
@@ -1250,7 +1382,7 @@ const CustomizerScreen = ({ layout, onBack, onComplete, settings, productHandle,
     });
 
     return properties;
-  }, [allFieldRefs, effectiveProductHandle, getFieldDefinition, getFieldValue, layout.id, layout.name, returnUrl]);
+  }, [allFieldRefs, configuredPhoneNumbers, effectiveProductHandle, getFieldDefinition, getFieldValue, layout.id, layout.name, returnUrl]);
 
   const primeProductOptions = useCallback((variants: ProductVariantOption[]) => {
     setProductOptions(variants);
@@ -1385,21 +1517,6 @@ const CustomizerScreen = ({ layout, onBack, onComplete, settings, productHandle,
       };
     });
   };
-
-  const updatePhoneNumberEntries = useCallback((nextEntries: PhoneNumberEntry[]) => {
-    setData((prev) => {
-      const normalizedEntries = nextEntries.filter((entry) => entry.value.trim() || entry.type.trim());
-      const firstValue = normalizedEntries.find((entry) => entry.value.trim())?.value || '';
-      const mobileLikeTypes = new Set(['Mobile', 'Cell', 'Mobile Phone', 'Cell Phone']);
-      const mobileValue = normalizedEntries.find((entry) => mobileLikeTypes.has(entry.type) && entry.value.trim())?.value || '';
-      return {
-        ...prev,
-        phone: firstValue,
-        mobile: mobileValue,
-        phoneNumbers: normalizedEntries
-      };
-    });
-  }, []);
 
   const handleFormAdvance = useCallback(() => {
     if (!formFieldRefs.length) {
@@ -1855,54 +1972,26 @@ const CustomizerScreen = ({ layout, onBack, onComplete, settings, productHandle,
               All visible fields are pre-filled for this layout. Continue to preview the proof.
             </div>
           )}
-          {phoneNumberConfig.maxPhones > 0 && (
-            <div className="rounded-2xl bg-slate-50 border border-slate-100 p-3 space-y-3">
-              <div className="flex items-center justify-between gap-3">
-                <p className="text-[11px] font-black uppercase tracking-[0.3em] text-slate-500">Phone numbers</p>
-                <span className="text-[10px] font-semibold text-slate-400">Max {phoneNumberConfig.maxPhones}</span>
-              </div>
+          {configuredPhoneNumbers.length > 0 && (
+            <div className="rounded-2xl bg-slate-50 border border-slate-100 p-3 space-y-2">
+              <p className="text-[11px] font-black uppercase tracking-[0.3em] text-slate-500">Phone setup</p>
               <div className="space-y-2">
-                {(data.phoneNumbers || []).map((entry, index) => (
-                  <div key={`${entry.type}-${index}`} className="grid grid-cols-[120px_minmax(0,1fr)] gap-2">
-                    <select
-                      value={entry.type}
-                      onChange={(e) => {
-                        const nextEntries = [...(data.phoneNumbers || [])];
-                        nextEntries[index] = { ...entry, type: e.target.value };
-                        updatePhoneNumberEntries(nextEntries);
-                      }}
-                      className="px-3 py-2 rounded-xl border border-slate-200 bg-white text-sm font-medium text-slate-700"
-                    >
-                      {phoneNumberConfig.allowedTypes.map((type) => (
-                        <option key={type} value={type}>{type}</option>
-                      ))}
-                    </select>
+                {configuredPhoneNumbers.map((entry, index) => (
+                  <div key={`${entry.type}-${index}`} className="grid grid-cols-1 gap-2 sm:grid-cols-[180px_minmax(0,1fr)] sm:items-center">
+                    <div className="text-[11px] font-black uppercase tracking-[0.3em] text-slate-400">{entry.type || `Line ${index + 1}`}</div>
                     <input
                       value={entry.value}
-                      onChange={(e) => {
-                        const nextEntries = [...(data.phoneNumbers || [])];
-                        nextEntries[index] = { ...entry, value: e.target.value };
+                      onChange={(event) => {
+                        const nextEntries = [...configuredPhoneNumbers];
+                        nextEntries[index] = { ...entry, value: event.target.value };
                         updatePhoneNumberEntries(nextEntries);
                       }}
-                      onFocus={() => setPreviewSide('front')}
-                      placeholder="Enter number"
-                      className="w-full px-3 py-2 rounded-xl border border-slate-200 bg-white text-sm font-medium text-slate-900 focus:ring-4 focus:ring-blue-100 outline-none"
+                      placeholder={`Enter ${entry.type || 'phone'} number`}
+                      className="w-full rounded-2xl border border-slate-200 bg-white px-4 py-3 text-sm font-medium text-slate-900 outline-none focus:ring-4 focus:ring-blue-100"
                     />
                   </div>
                 ))}
               </div>
-              {((data.phoneNumbers || []).length < phoneNumberConfig.maxPhones) && (
-                <button
-                  type="button"
-                  onClick={() => {
-                    const nextEntries = [...(data.phoneNumbers || []), { type: phoneNumberConfig.allowedTypes[0] || 'Phone', value: '' }];
-                    updatePhoneNumberEntries(nextEntries.slice(0, phoneNumberConfig.maxPhones));
-                  }}
-                  className="text-[10px] font-black uppercase tracking-[0.3em] text-blue-600"
-                >
-                  Add another number
-                </button>
-              )}
             </div>
           )}
           {lockedFieldRefs.length > 0 && (
@@ -2154,14 +2243,72 @@ const MainLayout = () => {
     tagLookupReason: null,
     cartReason: null
   });
+  const [phoneSetupOpen, setPhoneSetupOpen] = useState(false);
+  const [phoneSetupLayout, setPhoneSetupLayout] = useState<Layout | null>(null);
+  const [phoneSetupCount, setPhoneSetupCount] = useState(1);
+  const [phoneSetupEntries, setPhoneSetupEntries] = useState<PhoneNumberEntry[]>([]);
+  const [phoneSetupByLayoutId, setPhoneSetupByLayoutId] = useState<Record<string, PhoneNumberEntry[]>>({});
   const shopifyQueryTags = useMemo(() => getShopifyQueryTags(), []);
   const productHandle = useMemo(() => getProductHandleFromQuery(), []);
   const returnUrl = useMemo(() => getReturnUrlFromQuery(), []);
   const selectedLayout = useMemo(() => findLayoutById(brandConfigs, activeLayoutId), [brandConfigs, activeLayoutId]);
+  const maxPhoneSetupCount = useMemo(() => {
+    const counts = Object.values(brandConfigs).flatMap((config) => config.layouts.map((layout) => layout.phoneNumberConfig?.maxPhones || 0));
+    return Math.max(1, ...counts, 1);
+  }, [brandConfigs]);
   const navigate = useNavigate();
   const handleBrandConfigsChange = useCallback((next: Record<string, BrandConfig>) => {
     setBrandConfigs(normalizeBrandConfigs(next));
   }, []);
+
+  const handleLayoutSelection = useCallback((layout: Layout) => {
+    const existingSetup = phoneSetupByLayoutId[layout.id] || [];
+    const initialCount = Math.min(Math.max(existingSetup.length || 1, 1), maxPhoneSetupCount);
+    const allowedTypes = layout.phoneNumberConfig?.allowedTypes || [];
+    const nextEntries = existingSetup.length
+      ? existingSetup.slice(0, initialCount)
+      : buildPhoneSetupEntries(allowedTypes, initialCount);
+
+    while (nextEntries.length < initialCount) {
+      nextEntries.push({ type: allowedTypes[0]?.value || 'Telephone', value: '' });
+    }
+
+    setPhoneSetupLayout(layout);
+    setPhoneSetupCount(initialCount);
+    setPhoneSetupEntries(nextEntries);
+    setPhoneSetupOpen(true);
+  }, [maxPhoneSetupCount, phoneSetupByLayoutId]);
+
+  const handlePhoneSetupConfirm = useCallback(() => {
+    if (!phoneSetupLayout) return;
+    const resolvedLayout = resolvePhoneSetupLayout(phoneSetupLayout, phoneSetupCount, brandConfigs);
+    const allowedTypes = resolvedLayout.phoneNumberConfig?.allowedTypes || phoneSetupLayout.phoneNumberConfig?.allowedTypes || [];
+    const normalizedEntries = Array.from({ length: phoneSetupCount }, (_, index) => {
+      const entry = phoneSetupEntries[index] || { type: allowedTypes[0]?.value || 'Telephone', value: '' };
+      return {
+        type: entry.type || allowedTypes[0]?.value || 'Telephone',
+        value: entry.value || ''
+      };
+    });
+
+    setPhoneSetupByLayoutId((prev) => ({
+      ...prev,
+      [resolvedLayout.id]: normalizedEntries
+    }));
+    setActiveLayoutId(resolvedLayout.id);
+    setFlowStep(2);
+    setPhoneSetupOpen(false);
+    setPhoneSetupLayout(null);
+  }, [brandConfigs, phoneSetupCount, phoneSetupEntries, phoneSetupLayout]);
+
+  const phoneSetupResolveMessage = useMemo(() => {
+    if (!phoneSetupLayout) return '';
+    const resolved = resolvePhoneSetupLayout(phoneSetupLayout, phoneSetupCount, brandConfigs);
+    if (resolved.id === phoneSetupLayout.id) {
+      return `This setup fits ${phoneSetupLayout.name}.`;
+    }
+    return `This setup will switch you to ${resolved.name}.`;
+  }, [brandConfigs, phoneSetupCount, phoneSetupLayout]);
 
   const loadingScreen = (
     <div className="max-w-4xl mx-auto px-6 py-20 text-center animate-fadeIn">
@@ -2416,15 +2563,48 @@ const MainLayout = () => {
                 cartReason={shopifyCapabilities.cartReason}
                 tagLookupEnabled={shopifyCapabilities.tagLookupEnabled}
                 isAdmin={isAdmin}
+                initialPhoneNumbers={phoneSetupByLayoutId[selectedLayout.id] || []}
               />
             ) : (
-              <SelectionScreen onNext={(l) => { setActiveLayoutId(l.id); setFlowStep(2); }} settings={settings} brandConfigs={brandConfigs} activeTags={shopifyQueryTags} />
+              <SelectionScreen onNext={handleLayoutSelection} settings={settings} brandConfigs={brandConfigs} activeTags={shopifyQueryTags} />
             )
           } />
           <Route path="/admin/*" element={adminConsole} />
           <Route path="/shopify-admin" element={adminConsole} />
         </Routes>
       </main>
+
+      {phoneSetupOpen && phoneSetupLayout && (
+        <PhoneNumberSetupModal
+          layout={phoneSetupLayout}
+          count={phoneSetupCount}
+          entries={phoneSetupEntries}
+          maxCount={maxPhoneSetupCount}
+          onCountChange={(count) => {
+            const nextCount = Math.min(Math.max(1, count), maxPhoneSetupCount);
+            const allowedTypes = phoneSetupLayout.phoneNumberConfig?.allowedTypes || [];
+            const nextEntries = Array.from({ length: nextCount }, (_, index) => phoneSetupEntries[index] || { type: allowedTypes[0]?.value || 'Telephone', value: '' });
+            while (nextEntries.length < nextCount) {
+              nextEntries.push({ type: allowedTypes[0]?.value || 'Telephone', value: '' });
+            }
+            setPhoneSetupCount(nextCount);
+            setPhoneSetupEntries(nextEntries);
+          }}
+          onEntryChange={(index, nextEntry) => {
+            setPhoneSetupEntries((prev) => {
+              const next = [...prev];
+              next[index] = nextEntry;
+              return next;
+            });
+          }}
+          onCancel={() => {
+            setPhoneSetupOpen(false);
+            setPhoneSetupLayout(null);
+          }}
+          onConfirm={handlePhoneSetupConfirm}
+          resolveMessage={phoneSetupResolveMessage || 'Choose the setup that matches the card you want to build.'}
+        />
+      )}
       
       <footer className="bg-slate-900 py-20 px-12 border-t border-slate-800">
          <div className="max-w-7xl mx-auto flex flex-col md:flex-row justify-between items-center gap-12">

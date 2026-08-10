@@ -22,7 +22,13 @@ export const BRAND_CONFIGS: Record<string, BrandConfig> = {
         previewUrl: '',
         phoneNumberConfig: {
           maxPhones: 2,
-          allowedTypes: ['Telephone', 'Direct', 'Mobile', 'Cell', 'Phone']
+          allowedTypes: [
+            { label: 'T: Telephone', value: 'Telephone' },
+            { label: 'D: Direct', value: 'Direct' },
+            { label: 'M: Mobile', value: 'Mobile' },
+            { label: 'C: Cell', value: 'Cell' },
+            { label: 'F: Fax', value: 'Fax' }
+          ]
         },
         front: {
           backgroundColor: '#ffffff',
@@ -45,7 +51,13 @@ export const BRAND_CONFIGS: Record<string, BrandConfig> = {
         previewUrl: '',
         phoneNumberConfig: {
           maxPhones: 1,
-          allowedTypes: ['Telephone', 'Direct', 'Mobile', 'Cell', 'Phone']
+          allowedTypes: [
+            { label: 'T: Telephone', value: 'Telephone' },
+            { label: 'D: Direct', value: 'Direct' },
+            { label: 'M: Mobile', value: 'Mobile' },
+            { label: 'C: Cell', value: 'Cell' },
+            { label: 'F: Fax', value: 'Fax' }
+          ]
         },
         front: {
           backgroundColor: '#ffffff',
@@ -76,7 +88,13 @@ export const BRAND_CONFIGS: Record<string, BrandConfig> = {
         previewUrl: '',
         phoneNumberConfig: {
           maxPhones: 1,
-          allowedTypes: ['Telephone', 'Direct', 'Mobile', 'Cell', 'Phone']
+          allowedTypes: [
+            { label: 'T: Telephone', value: 'Telephone' },
+            { label: 'D: Direct', value: 'Direct' },
+            { label: 'M: Mobile', value: 'Mobile' },
+            { label: 'C: Cell', value: 'Cell' },
+            { label: 'F: Fax', value: 'Fax' }
+          ]
         },
         front: {
           backgroundColor: '#003fa7',

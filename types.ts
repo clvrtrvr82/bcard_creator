@@ -39,6 +39,11 @@ export interface ConditionalRule {
   styleOverride: Partial<FieldStyle>;
 }
 
+export interface PhoneNumberTypeOption {
+  label: string;
+  value: string;
+}
+
 export interface FieldStyle {
   top: number;
   left?: number;
@@ -102,7 +107,7 @@ export interface PhoneNumberEntry {
 
 export interface PhoneNumberConfig {
   maxPhones: number;
-  allowedTypes: string[];
+  allowedTypes: PhoneNumberTypeOption[];
 }
 
 export interface Layout {
