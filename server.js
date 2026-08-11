@@ -19,10 +19,15 @@ const __dirname = path.dirname(__filename);
 
 const HOST = process.env.HOST ?? '0.0.0.0';
 const PORT = Number(process.env.PORT ?? process.env.APP_PORT ?? 3000);
-const SHOPIFY_STORE_DOMAIN = process.env.SHOPIFY_STORE_DOMAIN;
-const SHOPIFY_API_VERSION = process.env.SHOPIFY_API_VERSION ?? '2024-01';
-const SHOPIFY_STOREFRONT_TOKEN = process.env.SHOPIFY_STOREFRONT_TOKEN;
-const SHOPIFY_ADMIN_ACCESS_TOKEN = process.env.SHOPIFY_ADMIN_ACCESS_TOKEN;
+const cleanEnvValue = (value) => {
+  if (typeof value !== 'string') return undefined;
+  const cleaned = value.trim();
+  return cleaned || undefined;
+};
+const SHOPIFY_STORE_DOMAIN = cleanEnvValue(process.env.SHOPIFY_STORE_DOMAIN);
+const SHOPIFY_API_VERSION = cleanEnvValue(process.env.SHOPIFY_API_VERSION) ?? '2024-01';
+const SHOPIFY_STOREFRONT_TOKEN = cleanEnvValue(process.env.SHOPIFY_STOREFRONT_TOKEN);
+const SHOPIFY_ADMIN_ACCESS_TOKEN = cleanEnvValue(process.env.SHOPIFY_ADMIN_ACCESS_TOKEN);
 const ADMIN_PASSWORD = process.env.ADMIN_PASSWORD ?? 'admin123';
 const ADMIN_SESSION_SECRET = process.env.ADMIN_SESSION_SECRET ?? 'theme-vault-admin-session';
 const SMTP_HOST = process.env.SMTP_HOST;
@@ -314,6 +319,59 @@ const withShopifyConfig = (needsToken = false) => {
   return { ok: true };
 };
 
+const maskSecret = (value) => {
+  if (!value) return null;
+  return `len:${value.length}:***${value.slice(-4)}`;
+};
+
+const testShopifyAdminToken = async () => {
+  if (!SHOPIFY_ADMIN_GRAPHQL_URL || !SHOPIFY_ADMIN_ACCESS_TOKEN) {
+    return { ok: false, reason: 'Admin token or URL missing.' };
+  }
+
+  try {
+    const data = await fetchShopifyAdminGraphQL('query { shop { name myshopifyDomain } }');
+    return {
+      ok: true,
+      shop: data?.shop?.myshopifyDomain || null,
+      name: data?.shop?.name || null
+    };
+  } catch (error) {
+    return { ok: false, reason: String(error?.message || error) };
+  }
+};
+
+const testShopifyStorefrontToken = async () => {
+  if (!SHOPIFY_GRAPHQL_URL || !SHOPIFY_STOREFRONT_TOKEN) {
+    return { ok: false, reason: 'Storefront token or URL missing.' };
+  }
+
+  try {
+    const upstream = await fetch(SHOPIFY_GRAPHQL_URL, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'Accept': 'application/json',
+        'X-Shopify-Storefront-Access-Token': SHOPIFY_STOREFRONT_TOKEN
+      },
+      body: JSON.stringify({ query: 'query { shop { name primaryDomain { url } } }' })
+    });
+    const payload = await upstream.json();
+    if (!upstream.ok || payload?.errors?.length) {
+      const detail = payload?.errors?.length ? payload.errors : payload;
+      return { ok: false, reason: JSON.stringify(detail) };
+    }
+
+    return {
+      ok: true,
+      name: payload?.data?.shop?.name || null,
+      domain: payload?.data?.shop?.primaryDomain?.url || null
+    };
+  } catch (error) {
+    return { ok: false, reason: String(error?.message || error) };
+  }
+};
+
 const mapProductVariants = (variants) => {
   const list = Array.isArray(variants) ? variants : [];
   return list
@@ -510,6 +568,35 @@ app.post('/api/admin/session', (req, res) => {
 app.delete('/api/admin/session', (_req, res) => {
   clearAdminSessionCookie(res);
   return res.json({ ok: true });
+});
+
+app.get('/api/shopify-diagnostics', requireAdmin, async (_req, res) => {
+  const [adminCheck, storefrontCheck] = await Promise.all([
+    testShopifyAdminToken(),
+    testShopifyStorefrontToken()
+  ]);
+
+  return res.json({
+    shopify: {
+      normalizedShopDomain,
+      apiVersion: SHOPIFY_API_VERSION,
+      adminGraphqlUrl: SHOPIFY_ADMIN_GRAPHQL_URL,
+      storefrontGraphqlUrl: SHOPIFY_GRAPHQL_URL,
+      envPresence: {
+        shopDomain: Boolean(SHOPIFY_STORE_DOMAIN),
+        adminToken: Boolean(SHOPIFY_ADMIN_ACCESS_TOKEN),
+        storefrontToken: Boolean(SHOPIFY_STOREFRONT_TOKEN)
+      },
+      envFingerprint: {
+        adminToken: maskSecret(SHOPIFY_ADMIN_ACCESS_TOKEN),
+        storefrontToken: maskSecret(SHOPIFY_STOREFRONT_TOKEN)
+      },
+      checks: {
+        admin: adminCheck,
+        storefront: storefrontCheck
+      }
+    }
+  });
 });
 
 app.get('/api/shopify-products', async (req, res) => {
@@ -961,4 +1048,10 @@ app.use((err, _req, res, _next) => {
 
 app.listen(PORT, HOST, () => {
   console.log(`Theme Vault Designer listening on http://${HOST}:${PORT}`);
+  console.log('Shopify runtime config', {
+    shop: normalizedShopDomain,
+    apiVersion: SHOPIFY_API_VERSION,
+    storefrontToken: maskSecret(SHOPIFY_STOREFRONT_TOKEN),
+    adminToken: maskSecret(SHOPIFY_ADMIN_ACCESS_TOKEN)
+  });
 });
