@@ -2015,30 +2015,6 @@ const CustomizerScreen = ({ layout, onBack, onComplete, settings, productHandle,
               All visible fields are pre-filled for this layout. Continue to preview the proof.
             </div>
           )}
-          {configuredPhoneNumbers.length > 0 && (
-            <div className="rounded-2xl bg-slate-50 border border-slate-100 p-3 space-y-2">
-              <p className="text-[11px] font-black uppercase tracking-[0.3em] text-slate-500">Phone setup</p>
-              <div className="space-y-2">
-                {configuredPhoneNumbers.map((entry, index) => (
-                  <div key={`${entry.type}-${index}`} className="grid grid-cols-1 gap-2 sm:grid-cols-[180px_minmax(0,1fr)] sm:items-center">
-                    <div className="text-[11px] font-black uppercase tracking-[0.3em] text-slate-400">{entry.type || `Line ${index + 1}`}</div>
-                    <input
-                      value={entry.value}
-                      onChange={(event) => {
-                        const nextEntries = [...configuredPhoneNumbers];
-                        nextEntries[index] = { ...entry, value: sanitizePhoneDigits(event.target.value) };
-                        updatePhoneNumberEntries(nextEntries);
-                      }}
-                      placeholder={`Enter ${entry.type || 'phone'} number`}
-                      inputMode="numeric"
-                      pattern="[0-9]*"
-                      className="w-full rounded-2xl border border-slate-200 bg-white px-4 py-3 text-sm font-medium text-slate-900 outline-none focus:ring-4 focus:ring-blue-100"
-                    />
-                  </div>
-                ))}
-              </div>
-            </div>
-          )}
           {lockedFieldRefs.length > 0 && (
             <div className="rounded-2xl bg-slate-50 border border-slate-100 p-3 space-y-2">
               <p className="text-[11px] font-black uppercase tracking-[0.3em] text-slate-500">Preset details</p>
@@ -2061,7 +2037,7 @@ const CustomizerScreen = ({ layout, onBack, onComplete, settings, productHandle,
           </div>
         </div>
       </div>
-      <div className="bg-white border border-slate-200 rounded-[22px] p-5 relative lg:sticky lg:top-8 space-y-4">
+      <div className="hidden lg:block bg-white border border-slate-200 rounded-[22px] p-5 relative lg:sticky lg:top-8 space-y-4">
         <div className="flex items-center justify-between">
           <div className="text-[10px] uppercase tracking-[0.4em] text-slate-400">Live Preview</div>
           {hasBackSide && (
@@ -2084,6 +2060,30 @@ const CustomizerScreen = ({ layout, onBack, onComplete, settings, productHandle,
       </div>
     </div>
   );
+
+  const mobileLivePreview = step === 'form' ? (
+    <div className="lg:hidden fixed inset-x-3 bottom-3 z-40 rounded-[20px] border border-slate-200 bg-white/95 p-3 shadow-[0_18px_45px_-20px_rgba(15,23,42,0.45)] backdrop-blur-sm">
+      <div className="flex items-center justify-between">
+        <div className="text-[10px] uppercase tracking-[0.35em] text-slate-400">Live Preview</div>
+        {hasBackSide && (
+          <div className="flex gap-1.5 text-[10px] font-black uppercase tracking-[0.22em]">
+            {(['front', 'back'] as const).map((side) => (
+              <button
+                key={`mobile-${side}`}
+                onClick={() => setPreviewSide(side)}
+                className={`px-2.5 py-1.5 rounded-lg border ${previewSide === side ? 'bg-slate-900 text-white border-slate-900' : 'bg-white text-slate-500 border-slate-200'}`}
+              >
+                {side}
+              </button>
+            ))}
+          </div>
+        )}
+      </div>
+      <div className="mt-2 rounded-2xl border border-slate-200 bg-slate-50 p-2 overflow-hidden">
+        {renderPreviewCard(previewSide, previewSideLayout, convertLegacyDisplayScale(0.78))}
+      </div>
+    </div>
+  ) : null;
 
   const proofStep = (
     <div className="space-y-6">
@@ -2227,10 +2227,11 @@ const CustomizerScreen = ({ layout, onBack, onComplete, settings, productHandle,
   );
 
   return (
-    <div className="max-w-5xl mx-auto p-6 space-y-8 animate-fadeIn">
+    <div className={`max-w-5xl mx-auto p-6 space-y-8 animate-fadeIn ${step === 'form' ? 'pb-48 lg:pb-6' : ''}`}>
       {step === 'form' && formStep}
       {step === 'proof' && proofStep}
       {step === 'quantity' && quantityStep}
+      {mobileLivePreview}
 
       {showApprovalModal && (
         <div className="fixed inset-0 bg-slate-900/50 backdrop-blur-sm flex items-center justify-center z-50 p-4">
