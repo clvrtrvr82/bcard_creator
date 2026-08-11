@@ -38,6 +38,11 @@ const createDefaultPhoneNumberConfig = (): PhoneNumberConfig => ({
   variantGroupId: ''
 });
 
+const normalizePhoneTypeCode = (option: PhoneNumberTypeOption) => {
+  const fallbackCode = String(option.value || '').trim().charAt(0).toUpperCase() || 'T';
+  return String(option.code || fallbackCode).trim().toUpperCase() || fallbackCode;
+};
+
 interface LayoutEditorProps {
   layout: Layout;
   onChange: (layout: Layout) => void;
@@ -998,6 +1003,18 @@ const LayoutEditor: React.FC<LayoutEditorProps> = ({ layout, onChange, settings,
   };
 
   const phoneNumberConfig = layout.phoneNumberConfig || createDefaultPhoneNumberConfig();
+  const normalizedPhoneTypeOptions = useMemo(() => {
+    return (phoneNumberConfig.allowedTypes || PHONE_TYPE_OPTIONS).map((option) => ({
+      ...option,
+      code: normalizePhoneTypeCode(option)
+    }));
+  }, [phoneNumberConfig.allowedTypes]);
+  const phoneRoutingExample = useMemo(() => {
+    return normalizedPhoneTypeOptions
+      .slice(0, Math.max(1, Math.min(phoneNumberConfig.maxPhones || 1, normalizedPhoneTypeOptions.length)))
+      .map((option) => option.code)
+      .join('');
+  }, [normalizedPhoneTypeOptions, phoneNumberConfig.maxPhones]);
 
   const handlePhoneNumberConfigChange = (mutator: (draft: PhoneNumberConfig) => void) => {
     commitLayout((draft) => {
@@ -1009,7 +1026,10 @@ const LayoutEditor: React.FC<LayoutEditorProps> = ({ layout, onChange, settings,
       };
       mutator(nextConfig);
       nextConfig.maxPhones = Math.max(1, Math.min(6, Math.round(nextConfig.maxPhones || 1)));
-      nextConfig.allowedTypes = nextConfig.allowedTypes.length ? nextConfig.allowedTypes : PHONE_TYPE_OPTIONS;
+      nextConfig.allowedTypes = (nextConfig.allowedTypes.length ? nextConfig.allowedTypes : PHONE_TYPE_OPTIONS).map((option) => ({
+        ...option,
+        code: normalizePhoneTypeCode(option)
+      }));
       nextConfig.variationPrefix = String(nextConfig.variationPrefix || '').trim().toUpperCase();
       nextConfig.variantGroupId = String(nextConfig.variantGroupId || '').trim().toLowerCase();
       draft.phoneNumberConfig = nextConfig;
@@ -1418,10 +1438,10 @@ const LayoutEditor: React.FC<LayoutEditorProps> = ({ layout, onChange, settings,
           </div>
           <div className="space-y-2">
             <p className="text-[11px] font-black uppercase tracking-[0.3em] text-slate-400">Popup Choices</p>
-            {(phoneNumberConfig.allowedTypes || PHONE_TYPE_OPTIONS).map((option, index) => (
+            {normalizedPhoneTypeOptions.map((option, index) => (
               <div key={`${option.value}-${index}`} className="grid grid-cols-1 gap-2 md:grid-cols-[120px_minmax(0,1fr)] md:items-center">
                 <span className="text-[11px] font-black uppercase tracking-[0.3em] text-slate-400">Type {index + 1}</span>
-                <div className="grid grid-cols-1 gap-2 md:grid-cols-[minmax(0,1fr)_minmax(0,1fr)]">
+                <div className="grid grid-cols-1 gap-2 md:grid-cols-[minmax(0,1fr)_minmax(0,1fr)_100px]">
                   <input
                     value={option.label}
                     onChange={(event) => handlePhoneNumberConfigChange((draft) => {
@@ -1442,9 +1462,36 @@ const LayoutEditor: React.FC<LayoutEditorProps> = ({ layout, onChange, settings,
                     placeholder="Value"
                     className="w-full rounded-2xl border border-slate-200 bg-white px-4 py-3 text-sm font-semibold text-slate-800"
                   />
+                  <input
+                    value={option.code || ''}
+                    onChange={(event) => handlePhoneNumberConfigChange((draft) => {
+                      const next = [...(draft.allowedTypes || PHONE_TYPE_OPTIONS)];
+                      next[index] = { ...next[index], code: event.target.value };
+                      draft.allowedTypes = next;
+                    })}
+                    placeholder="Code"
+                    maxLength={4}
+                    className="w-full rounded-2xl border border-slate-200 bg-white px-4 py-3 text-sm font-semibold uppercase text-slate-800"
+                  />
                 </div>
               </div>
             ))}
+          </div>
+          <div className="rounded-2xl border border-blue-100 bg-blue-50 px-4 py-3 space-y-2 text-xs text-blue-900">
+            <p className="font-black uppercase tracking-[0.24em] text-blue-700">Routing Preview</p>
+            <p>
+              Each phone choice maps to a code, and the customer's selection order is joined into the layout match prefix.
+            </p>
+            <div className="flex flex-wrap gap-2">
+              {normalizedPhoneTypeOptions.map((option) => (
+                <span key={`${option.value}-${option.code}`} className="rounded-full bg-white px-3 py-1.5 text-[11px] font-black uppercase tracking-[0.2em] text-blue-700 border border-blue-200">
+                  {option.label} = {option.code}
+                </span>
+              ))}
+            </div>
+            <p>
+              Example: if the customer chooses the first {Math.max(1, Math.min(phoneNumberConfig.maxPhones || 1, normalizedPhoneTypeOptions.length))} matching types in order, this layout would use a prefix like {phoneRoutingExample || 'T'}.
+            </p>
           </div>
           <div className="grid grid-cols-1 gap-3 md:grid-cols-[160px_minmax(0,1fr)] md:items-center">
             <label className="text-[11px] font-black uppercase tracking-[0.3em] text-slate-400">Variation Prefix</label>
@@ -1455,6 +1502,7 @@ const LayoutEditor: React.FC<LayoutEditorProps> = ({ layout, onChange, settings,
               className="w-full rounded-2xl border border-slate-200 bg-white px-4 py-3 text-sm font-semibold text-slate-800"
             />
           </div>
+          <p className="text-xs text-slate-500">Set Variation Prefix to the exact code sequence the customer will choose for this version. Example: Telephone then Mobile = TM.</p>
           <div className="grid grid-cols-1 gap-3 md:grid-cols-[160px_minmax(0,1fr)] md:items-center">
             <label className="text-[11px] font-black uppercase tracking-[0.3em] text-slate-400">Variant Group ID</label>
             <input
