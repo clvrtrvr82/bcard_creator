@@ -664,7 +664,7 @@ const AddressAutocomplete: React.FC<{
   );
 };
 
-const buildShopifyCartPermalink = ({
+const buildShopifyCartAddUrl = ({
   returnUrl,
   variantId,
   quantity,
@@ -676,16 +676,21 @@ const buildShopifyCartPermalink = ({
   properties: Record<string, string>;
 }) => {
   const parsed = new URL(returnUrl);
-  const params = new URLSearchParams({ storefront: 'true' });
+  const params = new URLSearchParams({
+    id: String(variantId),
+    quantity: String(Math.max(1, quantity)),
+    storefront: 'true',
+    return_to: '/cart'
+  });
   const propertyEntries = Object.entries(properties)
     .filter(([, value]) => String(value || '').trim())
     .slice(0, 25);
 
-  if (propertyEntries.length) {
-    params.set('properties', toBase64Url(JSON.stringify(Object.fromEntries(propertyEntries))));
-  }
+  propertyEntries.forEach(([key, value]) => {
+    params.set(`properties[${key}]`, String(value));
+  });
 
-  return `${parsed.origin}/cart/${variantId}:${Math.max(1, quantity)}?${params.toString()}`;
+  return `${parsed.origin}/cart/add?${params.toString()}`;
 };
 
 const PRODUCT_REQUEST_TIMEOUT_MS = 12000;
@@ -1258,6 +1263,7 @@ const CustomizerScreen = ({ layout, onBack, onComplete, settings, productHandle,
   const [previewSide, setPreviewSide] = useState<'front' | 'back'>('front');
   const [derivedProductHandle, setDerivedProductHandle] = useState<string | null>(null);
   const [productSource, setProductSource] = useState<'query' | 'layout' | 'tags' | null>(null);
+  const [postAddCartState, setPostAddCartState] = useState<{ open: boolean; checkoutUrl: string | null }>({ open: false, checkoutUrl: null });
   const [livePdfPreview, setLivePdfPreview] = useState<{ front: string | null; back: string | null }>({ front: null, back: null });
   const livePreviewRenderToken = useRef(0);
   const proofRef = useRef<HTMLDivElement>(null);
@@ -1861,32 +1867,19 @@ const CustomizerScreen = ({ layout, onBack, onComplete, settings, productHandle,
         if (redirectUrl) {
           try {
             const checkoutUrl = new URL(redirectUrl);
-            const fallbackOrigin = (() => {
-              if (!returnUrl) return window.location.origin;
-              try {
-                const parsedReturn = new URL(returnUrl);
-                return `${parsedReturn.protocol}//${parsedReturn.host}`;
-              } catch {
-                return window.location.origin;
-              }
-            })();
-            checkoutUrl.searchParams.set('return_to', fallbackOrigin);
-            window.location.href = checkoutUrl.toString();
+            if (returnUrl) {
+              checkoutUrl.searchParams.set('return_to', returnUrl);
+            }
+            setPostAddCartState({ open: true, checkoutUrl: checkoutUrl.toString() });
           } catch {
-            window.location.href = redirectUrl;
+            setPostAddCartState({ open: true, checkoutUrl: redirectUrl });
           }
-        } else if (returnUrl) {
-          returnToProductPage({
-            cardify_status: 'cart_created',
-            cardify_layout: layout.id,
-            cardify_variant: String(selectedVariant?.id || '')
-          });
         } else {
-          alert('Cart created but no checkout URL was returned. Please review Shopify response.');
+          setPostAddCartState({ open: true, checkoutUrl: null });
         }
       } else if (returnUrl && selectedVariant) {
         onComplete(data);
-        const redirectUrl = buildShopifyCartPermalink({
+        const redirectUrl = buildShopifyCartAddUrl({
           returnUrl,
           variantId: selectedVariant.id,
           quantity: 1,
@@ -2226,12 +2219,58 @@ const CustomizerScreen = ({ layout, onBack, onComplete, settings, productHandle,
     </div>
   );
 
+  const postAddModal = cartEnabled && step === 'quantity' && postAddCartState.open ? (
+    <div className="fixed inset-0 z-[130] flex items-center justify-center bg-slate-950/55 px-4 py-6 backdrop-blur-sm">
+      <div className="w-full max-w-xl rounded-[30px] border border-slate-100 bg-white p-6 shadow-2xl space-y-5">
+        <div>
+          <p className="text-[11px] font-black uppercase tracking-[0.35em] text-emerald-600">Added To Cart</p>
+          <h3 className="mt-2 text-3xl font-black text-slate-900 uppercase tracking-tight">Add Another Name?</h3>
+          <p className="mt-2 text-sm text-slate-500">You can keep adding names to the same cart, then check out once with one combined order.</p>
+        </div>
+        <div className="flex flex-wrap justify-end gap-3">
+          <button
+            onClick={() => {
+              setPostAddCartState({ open: false, checkoutUrl: null });
+              onBack();
+            }}
+            className="rounded-2xl border border-slate-200 px-5 py-3 text-[11px] font-black uppercase tracking-[0.3em] text-slate-600"
+          >
+            Add Another Name
+          </button>
+          <button
+            onClick={() => {
+              const checkoutUrl = postAddCartState.checkoutUrl;
+              setPostAddCartState({ open: false, checkoutUrl: null });
+              if (checkoutUrl) {
+                window.location.href = checkoutUrl;
+                return;
+              }
+              if (returnUrl) {
+                returnToProductPage({
+                  cardify_status: 'cart_created',
+                  cardify_layout: layout.id,
+                  cardify_variant: String(selectedVariant?.id || '')
+                });
+                return;
+              }
+              alert('Cart was updated but no checkout URL was returned.');
+            }}
+            className="rounded-2xl bg-slate-900 px-5 py-3 text-[11px] font-black uppercase tracking-[0.3em] text-white"
+          >
+            Checkout Now
+          </button>
+        </div>
+      </div>
+    </div>
+  ) : null;
+
   return (
     <div className={`max-w-5xl mx-auto p-6 space-y-8 animate-fadeIn ${step === 'form' ? 'pb-48 lg:pb-6' : ''}`}>
       {step === 'form' && formStep}
       {step === 'proof' && proofStep}
       {step === 'quantity' && quantityStep}
       {mobileLivePreview}
+      {postAddModal}
 
       {showApprovalModal && (
         <div className="fixed inset-0 bg-slate-900/50 backdrop-blur-sm flex items-center justify-center z-50 p-4">
