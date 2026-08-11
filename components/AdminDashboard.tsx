@@ -78,6 +78,7 @@ const createLayoutTemplate = (brand: string, groupId: string): Layout => ({
 
 const cloneConfigs = (configs: Record<string, BrandConfig>): Record<string, BrandConfig> => JSON.parse(JSON.stringify(configs));
 const cloneLayout = (layout: Layout): Layout => JSON.parse(JSON.stringify(layout));
+const LEGACY_UNGROUPED_ID = '__ungrouped__';
 const normalizeGroupId = (value: string) => value.trim().toLowerCase().replace(/\s+/g, '-');
 const getLayoutGroupId = (layout: Layout) => normalizeGroupId(layout.phoneNumberConfig?.variantGroupId || '');
 const formatGroupLabel = (groupId: string) => groupId.split('-').filter(Boolean).map((part) => part.charAt(0).toUpperCase() + part.slice(1)).join(' ') || 'Ungrouped';
@@ -231,8 +232,11 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({ brandConfigs, onBrandCo
       const groupId = getLayoutGroupId(layout);
       if (groupId) ids.add(groupId);
     });
+    if (selectedGroupId) {
+      ids.add(selectedGroupId);
+    }
     return Array.from(ids).sort((left, right) => left.localeCompare(right));
-  }, [allLayouts]);
+  }, [allLayouts, selectedGroupId]);
 
   const groupedFilteredLayouts = useMemo(() => {
     return filteredLayouts.reduce<Record<string, Layout[]>>((acc, layout) => {
@@ -610,10 +614,16 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({ brandConfigs, onBrandCo
                 <Trash2 size={16} /> Remove
               </button>
               <select
-                value={getLayoutGroupId(workingLayout)}
-                onChange={(event) => handleAssignWorkingLayoutGroup(event.target.value)}
+                value={getLayoutGroupId(workingLayout) || LEGACY_UNGROUPED_ID}
+                onChange={(event) => {
+                  if (event.target.value === LEGACY_UNGROUPED_ID) return;
+                  handleAssignWorkingLayoutGroup(event.target.value);
+                }}
                 className="px-3 py-2.5 rounded-xl border border-slate-200 bg-white text-[11px] font-black uppercase tracking-[0.18em] text-slate-600"
               >
+                {!getLayoutGroupId(workingLayout) && (
+                  <option value={LEGACY_UNGROUPED_ID}>Ungrouped (legacy)</option>
+                )}
                 {availableGroupIds.map((groupId) => (
                   <option key={groupId} value={groupId}>{formatGroupLabel(groupId)}</option>
                 ))}
