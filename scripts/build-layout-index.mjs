@@ -8,7 +8,9 @@ const tmpDir = path.join(rootDir, '.bcard-cache');
 const bundledFile = path.join(tmpDir, 'brand-configs.mjs');
 const publicDir = path.join(rootDir, 'public');
 const outputFile = path.join(publicDir, 'layout-index.json');
-const storedLayoutsFile = path.join(rootDir, 'data', 'brand-configs.json');
+const storedLayoutsFile = process.env.LAYOUTS_FILE_PATH
+  ? path.resolve(process.env.LAYOUTS_FILE_PATH)
+  : path.join(rootDir, 'data', 'brand-configs.runtime.json');
 
 async function ensureTmpBundle() {
   await fs.mkdir(tmpDir, { recursive: true });

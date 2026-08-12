@@ -47,7 +47,9 @@ const PROOF_EMAIL_ENABLED = Boolean(SMTP_HOST && SMTP_USER && SMTP_PASS);
 const distDir = path.resolve(__dirname, 'dist');
 const publicDir = path.resolve(__dirname, 'public');
 const dataDir = path.resolve(__dirname, 'data');
-const layoutsFile = path.join(dataDir, 'brand-configs.json');
+const layoutsFile = process.env.LAYOUTS_FILE_PATH
+  ? path.resolve(process.env.LAYOUTS_FILE_PATH)
+  : path.join(dataDir, 'brand-configs.runtime.json');
 const proofsIndexFile = path.join(dataDir, 'proofs-index.json');
 const builtLayoutIndexFile = path.join(distDir, 'layout-index.json');
 const sourceLayoutIndexFile = path.join(publicDir, 'layout-index.json');
