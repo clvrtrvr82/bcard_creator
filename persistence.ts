@@ -8,7 +8,12 @@ const SERVER_LAYOUTS_ENDPOINT = '/api/layouts';
 
 const hasIndexedDb = typeof indexedDB !== 'undefined';
 
-const loadServerLayouts = async (): Promise<Record<string, BrandConfig> | null> => {
+type ServerLayoutsResult = {
+  status: 'ok' | 'empty' | 'unavailable';
+  configs: Record<string, BrandConfig> | null;
+};
+
+const loadServerLayouts = async (): Promise<ServerLayoutsResult> => {
   if (typeof fetch === 'undefined') return null;
 
   try {
@@ -19,7 +24,7 @@ const loadServerLayouts = async (): Promise<Record<string, BrandConfig> | null> 
     });
 
     if (response.status === 404) {
-      return null;
+      return { status: 'empty', configs: null };
     }
 
     if (!response.ok) {
@@ -29,13 +34,13 @@ const loadServerLayouts = async (): Promise<Record<string, BrandConfig> | null> 
     const payload = await response.json();
     const configs = payload?.brandConfigs;
     if (!configs || typeof configs !== 'object') {
-      return null;
+      return { status: 'empty', configs: null };
     }
 
-    return configs as Record<string, BrandConfig>;
+    return { status: 'ok', configs: configs as Record<string, BrandConfig> };
   } catch (error) {
     console.warn('Unable to load layouts from server.', error);
-    return null;
+    return { status: 'unavailable', configs: null };
   }
 };
 
@@ -80,8 +85,14 @@ const openDatabase = async (): Promise<IDBDatabase | null> => {
 
 export const loadPersistedLayouts = async (): Promise<Record<string, BrandConfig> | null> => {
   const serverLayouts = await loadServerLayouts();
-  if (serverLayouts) {
-    return serverLayouts;
+  if (serverLayouts.status === 'ok') {
+    return serverLayouts.configs;
+  }
+
+  // If the server explicitly reports no saved layouts, do not resurrect stale
+  // local IndexedDB data from older sessions.
+  if (serverLayouts.status === 'empty') {
+    return null;
   }
 
   const database = await openDatabase();

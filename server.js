@@ -228,6 +228,17 @@ const readStoredBrandConfigs = () => {
   return configs;
 };
 
+const countLayouts = (brandConfigs) => {
+  if (!brandConfigs || typeof brandConfigs !== 'object' || Array.isArray(brandConfigs)) {
+    return 0;
+  }
+
+  return Object.values(brandConfigs).reduce((total, config) => {
+    const list = Array.isArray(config?.layouts) ? config.layouts : [];
+    return total + list.length;
+  }, 0);
+};
+
 const readProofIndex = () => {
   const payload = readJsonFile(proofsIndexFile);
   if (!payload || typeof payload !== 'object') return [];
@@ -1049,7 +1060,12 @@ app.use((err, _req, res, _next) => {
 });
 
 app.listen(PORT, HOST, () => {
+  const storedConfigs = readStoredBrandConfigs();
   console.log(`Theme Vault Designer listening on http://${HOST}:${PORT}`);
+  console.log('Layout storage config', {
+    layoutsFile,
+    storedLayoutCount: countLayouts(storedConfigs)
+  });
   console.log('Shopify runtime config', {
     shop: normalizedShopDomain,
     apiVersion: SHOPIFY_API_VERSION,
