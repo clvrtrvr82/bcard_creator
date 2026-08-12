@@ -500,6 +500,28 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({ brandConfigs, onBrandCo
     reader.readAsText(file);
   };
 
+  const handleResetServerLayouts = async () => {
+    const confirmed = window.confirm('This will clear saved layouts on the server for this deployment. Continue?');
+    if (!confirmed) return;
+
+    try {
+      const response = await fetch('/api/layouts', {
+        method: 'DELETE',
+        credentials: 'include'
+      });
+
+      if (!response.ok) {
+        throw new Error(`Unable to clear server layouts: ${response.status}`);
+      }
+
+      pushMessage('Server layout storage cleared. Reloading…');
+      window.location.reload();
+    } catch (resetError) {
+      console.error('Unable to clear server layouts.', resetError);
+      pushError('Unable to clear server layout storage. Confirm admin login and try again.');
+    }
+  };
+
   const totalLayouts = allLayouts.length;
   const taggedLayouts = allLayouts.filter((layout) => (layout.shopifyTags?.length || 0) > 0).length;
   const untaggedLayouts = Math.max(totalLayouts - taggedLayouts, 0);
@@ -745,6 +767,16 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({ brandConfigs, onBrandCo
               <span className="flex items-center gap-3"><SettingsIcon size={18} /> App Settings</span>
               <ExternalLink size={16} />
             </button>
+            <div className="rounded-2xl border border-red-200 bg-red-50 px-4 py-3 space-y-2">
+              <p className="text-[11px] font-black uppercase tracking-[0.22em] text-red-600">Recovery</p>
+              <p className="text-xs text-red-700">Use this if old/deleted layouts keep reappearing from stale server storage.</p>
+              <button
+                onClick={handleResetServerLayouts}
+                className="w-full rounded-xl border border-red-300 bg-white px-3 py-2.5 text-[11px] font-black uppercase tracking-[0.24em] text-red-700"
+              >
+                Reset Server Layout Storage
+              </button>
+            </div>
           </div>
         </div>
 
