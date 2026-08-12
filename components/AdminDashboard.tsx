@@ -63,6 +63,8 @@ const DEFAULT_PHONE_TYPE_OPTIONS: PhoneNumberTypeOption[] = [
   { label: 'F: Fax', value: 'Fax', code: 'F' }
 ];
 
+const DEFAULT_VARIANT_PREFIXES = ['TF', 'TM', 'TD', 'TC', 'DF', 'DM', 'CF', 'CM'];
+
 const createLayoutTemplate = (brand: string, groupId: string): Layout => ({
   id: `layout-${Date.now()}`,
   brand,
@@ -444,6 +446,75 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({ brandConfigs, onBrandCo
     pushMessage('Layout removed.');
   };
 
+  const handleGeneratePhoneVariants = () => {
+    if (!workingLayout) {
+      pushError('Select a base layout first.');
+      return;
+    }
+
+    const baseBrand = workingLayout.brand?.toString() || getDefaultBrandKey();
+    const groupId = normalizeGroupId(
+      workingLayout.phoneNumberConfig?.variantGroupId
+      || `${workingLayout.id}-phone-group`
+    );
+    const prefixes = DEFAULT_VARIANT_PREFIXES;
+    const clone = cloneConfigs(brandConfigs);
+    ensureBrandBucket(clone, baseBrand);
+
+    const existingBrandLayouts = clone[baseBrand].layouts;
+    const existingPrefixSet = new Set(
+      existingBrandLayouts
+        .filter((layout) => normalizeGroupId(layout.phoneNumberConfig?.variantGroupId || '') === groupId)
+        .map((layout) => String(layout.phoneNumberConfig?.variationPrefix || '').trim().toUpperCase())
+        .filter(Boolean)
+    );
+
+    const generatedLayouts: Layout[] = [];
+    prefixes.forEach((prefix) => {
+      const normalizedPrefix = String(prefix || '').trim().toUpperCase();
+      if (!normalizedPrefix || existingPrefixSet.has(normalizedPrefix)) return;
+
+      const variant = cloneLayout(workingLayout);
+      variant.id = `${workingLayout.id}-${normalizedPrefix.toLowerCase()}-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`;
+      variant.name = `${workingLayout.name} - ${normalizedPrefix}`;
+      variant.customerVisible = false;
+      variant.phoneNumberConfig = {
+        maxPhones: Math.max(workingLayout.phoneNumberConfig?.maxPhones || 1, normalizedPrefix.length),
+        allowedTypes: workingLayout.phoneNumberConfig?.allowedTypes?.length ? workingLayout.phoneNumberConfig.allowedTypes : DEFAULT_PHONE_TYPE_OPTIONS,
+        variationPrefix: normalizedPrefix,
+        variantGroupId: groupId
+      };
+      generatedLayouts.push(variant);
+    });
+
+    if (!generatedLayouts.length) {
+      pushError(`No new variants generated. Prefixes already exist in group ${formatGroupLabel(groupId)}.`);
+      return;
+    }
+
+    const normalizedBaseLayout: Layout = {
+      ...workingLayout,
+      customerVisible: true,
+      phoneNumberConfig: {
+        maxPhones: workingLayout.phoneNumberConfig?.maxPhones || 1,
+        allowedTypes: workingLayout.phoneNumberConfig?.allowedTypes?.length ? workingLayout.phoneNumberConfig.allowedTypes : DEFAULT_PHONE_TYPE_OPTIONS,
+        variationPrefix: String(workingLayout.phoneNumberConfig?.variationPrefix || '').trim().toUpperCase(),
+        variantGroupId: groupId
+      }
+    };
+
+    clone[baseBrand].layouts = clone[baseBrand].layouts
+      .filter((layout) => layout.id !== workingLayout.id)
+      .concat([normalizedBaseLayout, ...generatedLayouts]);
+
+    onBrandConfigsChange(clone);
+    setSelectedGroupId(groupId);
+    setExpandedGroups((prev) => ({ ...prev, [groupId]: true }));
+    setWorkingLayout(normalizedBaseLayout);
+    setSelectedLayoutId(normalizedBaseLayout.id);
+    pushMessage(`Generated ${generatedLayouts.length} phone variants in ${formatGroupLabel(groupId)}.`);
+  };
+
   const handleSettingsSave = () => {
     onSettingsChange(settingsForm);
     pushMessage('Studio settings updated.');
@@ -751,6 +822,9 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({ brandConfigs, onBrandCo
               </button>
               <button onClick={handleDuplicateLayout} className="px-4 py-2.5 rounded-xl bg-slate-200 text-slate-900 text-[11px] font-black uppercase tracking-[0.3em] flex items-center gap-2">
                 <Copy size={16} /> Duplicate
+              </button>
+              <button onClick={handleGeneratePhoneVariants} className="px-4 py-2.5 rounded-xl bg-indigo-600 text-white text-[11px] font-black uppercase tracking-[0.3em] flex items-center gap-2">
+                <Plus size={16} /> Generate Phone Variants
               </button>
               <button onClick={handleDeleteLayout} className="px-4 py-2.5 rounded-xl bg-red-50 text-red-600 text-[11px] font-black uppercase tracking-[0.3em] flex items-center gap-2">
                 <Trash2 size={16} /> Remove
