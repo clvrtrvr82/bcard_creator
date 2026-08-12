@@ -38,6 +38,11 @@ interface ProofRecord {
   notificationTarget?: string;
 }
 
+interface LayoutSourcesInfo {
+  runtime: { file: string; exists: boolean; layoutCount: number };
+  legacy: { file: string; exists: boolean; layoutCount: number };
+}
+
 const createBlankBrandConfig = (brand: string): BrandConfig => ({
   primaryColor: '#0f172a',
   secondaryColor: '#ffffff',
@@ -160,6 +165,8 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({ brandConfigs, onBrandCo
   const [proofSearch, setProofSearch] = useState('');
   const [proofEmailFilter, setProofEmailFilter] = useState<'all' | 'sent' | 'unsent'>('all');
   const [proofRefreshToken, setProofRefreshToken] = useState(0);
+  const [layoutSources, setLayoutSources] = useState<LayoutSourcesInfo | null>(null);
+  const [layoutSourcesStatus, setLayoutSourcesStatus] = useState<'idle' | 'loading' | 'ready' | 'error'>('idle');
   const [selectedGroupId, setSelectedGroupId] = useState('');
   const [newGroupName, setNewGroupName] = useState('');
   const [expandedGroups, setExpandedGroups] = useState<Record<string, boolean>>({});
@@ -522,6 +529,44 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({ brandConfigs, onBrandCo
     }
   };
 
+  const handleLoadLayoutSources = async () => {
+    setLayoutSourcesStatus('loading');
+    try {
+      const response = await fetch('/api/layout-sources', { credentials: 'include' });
+      if (!response.ok) {
+        throw new Error(`Unable to load layout source diagnostics: ${response.status}`);
+      }
+      const payload = await response.json();
+      setLayoutSources(payload as LayoutSourcesInfo);
+      setLayoutSourcesStatus('ready');
+    } catch (sourceError) {
+      console.error('Unable to load layout source diagnostics.', sourceError);
+      setLayoutSources(null);
+      setLayoutSourcesStatus('error');
+    }
+  };
+
+  const handleRestoreLegacyLayouts = async () => {
+    const confirmed = window.confirm('Restore layouts from legacy file into current runtime storage? This will overwrite current server-saved layouts.');
+    if (!confirmed) return;
+
+    try {
+      const response = await fetch('/api/layouts/restore-legacy', {
+        method: 'POST',
+        credentials: 'include'
+      });
+      if (!response.ok) {
+        throw new Error(`Unable to restore legacy layouts: ${response.status}`);
+      }
+      const payload = await response.json();
+      pushMessage(`Restored ${payload?.restoredLayoutCount || 0} layouts from legacy storage. Reloading…`);
+      window.location.reload();
+    } catch (restoreError) {
+      console.error('Unable to restore legacy layouts.', restoreError);
+      pushError('Unable to restore legacy layouts. Check source diagnostics and try again.');
+    }
+  };
+
   const totalLayouts = allLayouts.length;
   const taggedLayouts = allLayouts.filter((layout) => (layout.shopifyTags?.length || 0) > 0).length;
   const untaggedLayouts = Math.max(totalLayouts - taggedLayouts, 0);
@@ -776,6 +821,34 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({ brandConfigs, onBrandCo
               >
                 Reset Server Layout Storage
               </button>
+              <button
+                onClick={handleLoadLayoutSources}
+                className="w-full rounded-xl border border-slate-300 bg-white px-3 py-2.5 text-[11px] font-black uppercase tracking-[0.24em] text-slate-700"
+              >
+                Inspect Layout Sources
+              </button>
+              <button
+                onClick={handleRestoreLegacyLayouts}
+                className="w-full rounded-xl border border-amber-300 bg-white px-3 py-2.5 text-[11px] font-black uppercase tracking-[0.24em] text-amber-700"
+              >
+                Restore Legacy Layouts
+              </button>
+              {layoutSourcesStatus === 'loading' && <p className="text-xs text-slate-600">Checking source files…</p>}
+              {layoutSourcesStatus === 'error' && <p className="text-xs text-red-700">Unable to load source diagnostics.</p>}
+              {layoutSources && (
+                <div className="space-y-2 text-xs text-slate-700">
+                  <div className="rounded-xl border border-slate-200 bg-white px-3 py-2">
+                    <p className="font-black uppercase tracking-[0.18em] text-slate-500">Runtime</p>
+                    <p className="mt-1">{layoutSources.runtime.layoutCount} layouts</p>
+                    <p className="mt-1 text-[11px] break-all text-slate-500">{layoutSources.runtime.file}</p>
+                  </div>
+                  <div className="rounded-xl border border-slate-200 bg-white px-3 py-2">
+                    <p className="font-black uppercase tracking-[0.18em] text-slate-500">Legacy</p>
+                    <p className="mt-1">{layoutSources.legacy.layoutCount} layouts</p>
+                    <p className="mt-1 text-[11px] break-all text-slate-500">{layoutSources.legacy.file}</p>
+                  </div>
+                </div>
+              )}
             </div>
           </div>
         </div>

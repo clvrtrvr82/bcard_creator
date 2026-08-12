@@ -50,6 +50,7 @@ const dataDir = path.resolve(__dirname, 'data');
 const layoutsFile = process.env.LAYOUTS_FILE_PATH
   ? path.resolve(process.env.LAYOUTS_FILE_PATH)
   : path.join(dataDir, 'brand-configs.runtime.json');
+const legacyLayoutsFile = path.join(dataDir, 'brand-configs.json');
 const proofsIndexFile = path.join(dataDir, 'proofs-index.json');
 const builtLayoutIndexFile = path.join(distDir, 'layout-index.json');
 const sourceLayoutIndexFile = path.join(publicDir, 'layout-index.json');
@@ -216,8 +217,8 @@ const sendProofEmail = async ({
   return { emailed: true, to };
 };
 
-const readStoredBrandConfigs = () => {
-  const payload = readJsonFile(layoutsFile);
+const readBrandConfigsFromFile = (targetFile) => {
+  const payload = readJsonFile(targetFile);
   if (!payload || typeof payload !== 'object') return null;
 
   const configs = payload.brandConfigs;
@@ -227,6 +228,9 @@ const readStoredBrandConfigs = () => {
 
   return configs;
 };
+
+const readStoredBrandConfigs = () => readBrandConfigsFromFile(layoutsFile);
+const readLegacyBrandConfigs = () => readBrandConfigsFromFile(legacyLayoutsFile);
 
 const countLayouts = (brandConfigs) => {
   if (!brandConfigs || typeof brandConfigs !== 'object' || Array.isArray(brandConfigs)) {
@@ -681,6 +685,24 @@ app.get('/api/layouts', (_req, res) => {
   return res.json({ brandConfigs });
 });
 
+app.get('/api/layout-sources', requireAdmin, (_req, res) => {
+  const runtimeConfigs = readStoredBrandConfigs();
+  const legacyConfigs = readLegacyBrandConfigs();
+
+  return res.json({
+    runtime: {
+      file: layoutsFile,
+      exists: fs.existsSync(layoutsFile),
+      layoutCount: countLayouts(runtimeConfigs)
+    },
+    legacy: {
+      file: legacyLayoutsFile,
+      exists: fs.existsSync(legacyLayoutsFile),
+      layoutCount: countLayouts(legacyConfigs)
+    }
+  });
+});
+
 app.get('/api/proofs', requireAdmin, (_req, res) => {
   return res.json({ proofs: readProofIndex() });
 });
@@ -701,6 +723,25 @@ app.put('/api/layouts', requireAdmin, (req, res) => {
   } catch (error) {
     console.error('Unable to persist layouts file', error);
     return res.status(500).json({ message: 'Unable to persist layouts.' });
+  }
+});
+
+app.post('/api/layouts/restore-legacy', requireAdmin, (_req, res) => {
+  const legacyConfigs = readLegacyBrandConfigs();
+  if (!legacyConfigs) {
+    return res.status(404).json({ message: 'No legacy layout file found to restore.' });
+  }
+
+  try {
+    const payload = {
+      updatedAt: new Date().toISOString(),
+      brandConfigs: legacyConfigs
+    };
+    fs.writeFileSync(layoutsFile, JSON.stringify(payload, null, 2));
+    return res.json({ ok: true, restoredLayoutCount: countLayouts(legacyConfigs) });
+  } catch (error) {
+    console.error('Unable to restore legacy layouts', error);
+    return res.status(500).json({ message: 'Unable to restore legacy layouts.' });
   }
 });
 
