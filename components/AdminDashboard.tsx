@@ -43,6 +43,10 @@ interface LayoutSourcesInfo {
   legacy: { file: string; exists: boolean; layoutCount: number };
 }
 
+const BROWSER_LAYOUT_DB_NAME = 'theme-vault-designer';
+const BROWSER_LAYOUT_STORE = 'app-state';
+const BROWSER_LAYOUT_KEY = 'brand-configs';
+
 const createBlankBrandConfig = (brand: string): BrandConfig => ({
   primaryColor: '#0f172a',
   secondaryColor: '#ffffff',
@@ -167,6 +171,8 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({ brandConfigs, onBrandCo
   const [proofRefreshToken, setProofRefreshToken] = useState(0);
   const [layoutSources, setLayoutSources] = useState<LayoutSourcesInfo | null>(null);
   const [layoutSourcesStatus, setLayoutSourcesStatus] = useState<'idle' | 'loading' | 'ready' | 'error'>('idle');
+  const [browserCacheLayoutCount, setBrowserCacheLayoutCount] = useState<number | null>(null);
+  const [browserCacheStatus, setBrowserCacheStatus] = useState<'idle' | 'loading' | 'ready' | 'error'>('idle');
   const [selectedGroupId, setSelectedGroupId] = useState('');
   const [newGroupName, setNewGroupName] = useState('');
   const [expandedGroups, setExpandedGroups] = useState<Record<string, boolean>>({});
@@ -567,6 +573,75 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({ brandConfigs, onBrandCo
     }
   };
 
+  const loadBrowserCachedLayouts = async (): Promise<Record<string, BrandConfig> | null> => {
+    if (typeof indexedDB === 'undefined') return null;
+
+    const database = await new Promise<IDBDatabase>((resolve, reject) => {
+      const request = indexedDB.open(BROWSER_LAYOUT_DB_NAME, 1);
+      request.onsuccess = () => resolve(request.result);
+      request.onerror = () => reject(request.error ?? new Error('Unable to open browser cache database.'));
+    });
+
+    return new Promise((resolve, reject) => {
+      const transaction = database.transaction(BROWSER_LAYOUT_STORE, 'readonly');
+      const store = transaction.objectStore(BROWSER_LAYOUT_STORE);
+      const request = store.get(BROWSER_LAYOUT_KEY);
+      request.onsuccess = () => {
+        const result = request.result;
+        if (!result || typeof result !== 'object') {
+          resolve(null);
+          return;
+        }
+        resolve(result as Record<string, BrandConfig>);
+      };
+      request.onerror = () => reject(request.error ?? new Error('Unable to read browser cached layouts.'));
+    });
+  };
+
+  const handleInspectBrowserCache = async () => {
+    setBrowserCacheStatus('loading');
+    try {
+      const cached = await loadBrowserCachedLayouts();
+      const count = cached
+        ? Object.values(cached).reduce((total, config) => total + (Array.isArray(config.layouts) ? config.layouts.length : 0), 0)
+        : 0;
+      setBrowserCacheLayoutCount(count);
+      setBrowserCacheStatus('ready');
+      if (!count) {
+        pushError('No browser-cached layouts were found on this device/profile.');
+        return;
+      }
+      pushMessage(`Found ${count} browser-cached layouts on this device.`);
+    } catch (cacheError) {
+      console.error('Unable to inspect browser cached layouts.', cacheError);
+      setBrowserCacheLayoutCount(null);
+      setBrowserCacheStatus('error');
+      pushError('Unable to inspect browser cache in this session.');
+    }
+  };
+
+  const handleRestoreBrowserCacheLayouts = async () => {
+    const cached = await loadBrowserCachedLayouts().catch((error) => {
+      console.error('Unable to read browser cached layouts.', error);
+      return null;
+    });
+
+    if (!cached || !Object.keys(cached).length) {
+      pushError('No browser-cached layouts are available to restore.');
+      return;
+    }
+
+    const cacheCount = Object.values(cached).reduce((total, config) => total + (Array.isArray(config.layouts) ? config.layouts.length : 0), 0);
+    const confirmed = window.confirm(`Restore ${cacheCount} layouts from this browser cache to server storage? This overwrites current server layouts.`);
+    if (!confirmed) return;
+
+    onBrandConfigsChange(cloneConfigs(cached));
+    pushMessage(`Restoring ${cacheCount} cached layouts to server storage…`);
+    window.setTimeout(() => {
+      window.location.reload();
+    }, 900);
+  };
+
   const totalLayouts = allLayouts.length;
   const taggedLayouts = allLayouts.filter((layout) => (layout.shopifyTags?.length || 0) > 0).length;
   const untaggedLayouts = Math.max(totalLayouts - taggedLayouts, 0);
@@ -828,6 +903,18 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({ brandConfigs, onBrandCo
                 Inspect Layout Sources
               </button>
               <button
+                onClick={handleInspectBrowserCache}
+                className="w-full rounded-xl border border-indigo-300 bg-white px-3 py-2.5 text-[11px] font-black uppercase tracking-[0.24em] text-indigo-700"
+              >
+                Inspect Browser Cache
+              </button>
+              <button
+                onClick={handleRestoreBrowserCacheLayouts}
+                className="w-full rounded-xl border border-indigo-300 bg-white px-3 py-2.5 text-[11px] font-black uppercase tracking-[0.24em] text-indigo-700"
+              >
+                Restore Browser Cached Layouts
+              </button>
+              <button
                 onClick={handleRestoreLegacyLayouts}
                 className="w-full rounded-xl border border-amber-300 bg-white px-3 py-2.5 text-[11px] font-black uppercase tracking-[0.24em] text-amber-700"
               >
@@ -835,6 +922,13 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({ brandConfigs, onBrandCo
               </button>
               {layoutSourcesStatus === 'loading' && <p className="text-xs text-slate-600">Checking source files…</p>}
               {layoutSourcesStatus === 'error' && <p className="text-xs text-red-700">Unable to load source diagnostics.</p>}
+              {browserCacheStatus === 'loading' && <p className="text-xs text-slate-600">Checking browser cache…</p>}
+              {browserCacheStatus === 'error' && <p className="text-xs text-red-700">Unable to inspect browser cache.</p>}
+              {browserCacheStatus === 'ready' && (
+                <div className="rounded-xl border border-indigo-200 bg-indigo-50 px-3 py-2 text-xs text-indigo-900">
+                  Browser cache contains {browserCacheLayoutCount ?? 0} layouts.
+                </div>
+              )}
               {layoutSources && (
                 <div className="space-y-2 text-xs text-slate-700">
                   <div className="rounded-xl border border-slate-200 bg-white px-3 py-2">
