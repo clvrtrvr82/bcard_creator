@@ -440,6 +440,35 @@ const mapProductSummary = (product) => ({
       .filter(Boolean)
 });
 
+const STOREFRONT_CATALOG_CACHE_TTL_MS = 60_000;
+let storefrontCatalogCache = { fetchedAt: 0, products: null };
+
+// Avoid re-fetching/parsing the full public product catalog on every request
+// once the Admin API token is failing, which repeatedly triggers this fallback.
+const fetchStorefrontProductCatalog = async () => {
+  const now = Date.now();
+  if (storefrontCatalogCache.products && (now - storefrontCatalogCache.fetchedAt) < STOREFRONT_CATALOG_CACHE_TTL_MS) {
+    return storefrontCatalogCache.products;
+  }
+
+  const upstream = await fetch(`${SHOPIFY_BASE_URL}/products.json?limit=250`, {
+    headers: {
+      'Accept': 'application/json',
+      'User-Agent': 'theme-vault-proxy'
+    }
+  });
+
+  if (!upstream.ok) {
+    const detail = await upstream.text();
+    throw new Error(`Shopify product list lookup failed: ${detail}`);
+  }
+
+  const payload = await upstream.json();
+  const products = Array.isArray(payload?.products) ? payload.products : [];
+  storefrontCatalogCache = { fetchedAt: now, products };
+  return products;
+};
+
 const fetchShopifyAdminGraphQL = async (query, variables = {}) => {
   if (!SHOPIFY_ADMIN_GRAPHQL_URL || !SHOPIFY_ADMIN_ACCESS_TOKEN) {
     throw new Error('Shopify Admin API not configured.');
@@ -643,21 +672,7 @@ app.get('/api/shopify-products', async (req, res) => {
       }
     }
 
-    const upstream = await fetch(`${SHOPIFY_BASE_URL}/products.json?limit=250`, {
-      headers: {
-        'Accept': 'application/json',
-        'User-Agent': 'theme-vault-proxy'
-      }
-    });
-
-    if (!upstream.ok) {
-      const detail = await upstream.text();
-      console.error('Shopify product list lookup failed', detail);
-      return res.status(upstream.status).json({ message: 'Unable to query Shopify products.', detail });
-    }
-
-    const payload = await upstream.json();
-    const products = Array.isArray(payload?.products) ? payload.products : [];
+    const products = await fetchStorefrontProductCatalog();
     const normalizedQuery = query.toLowerCase();
     const filtered = products
       .map((product) => mapProductSummary(product))
@@ -858,21 +873,14 @@ app.get('/api/shopify-products-by-tags', async (req, res) => {
       }
     }
 
-    const upstream = await fetch(`${SHOPIFY_BASE_URL}/products.json?limit=250`, {
-      headers: {
-        'Accept': 'application/json',
-        'User-Agent': 'theme-vault-proxy'
-      }
-    });
-
-    if (!upstream.ok) {
-      const detail = await upstream.text();
-      console.error('Shopify tag lookup failed', detail);
-      return res.status(upstream.status).json({ message: 'Unable to query Shopify products.', detail });
+    let products;
+    try {
+      products = await fetchStorefrontProductCatalog();
+    } catch (fetchError) {
+      console.error('Shopify tag lookup failed', fetchError);
+      return res.status(502).json({ message: 'Unable to query Shopify products.' });
     }
 
-    const payload = await upstream.json();
-    const products = Array.isArray(payload?.products) ? payload.products : [];
     const normalizedTags = tags.map((tag) => tag.toLowerCase());
     const matches = products.filter((product) => {
       const productTags = String(product?.tags || '')
