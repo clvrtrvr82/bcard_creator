@@ -284,16 +284,22 @@ const mapLayoutsForPublicIndex = (brandConfigs) => {
 };
 
 const readStaticLayoutIndex = () => {
-  const payload = readJsonFile(builtLayoutIndexFile) ?? readJsonFile(sourceLayoutIndexFile);
-  const staticLayouts = Array.isArray(payload?.layouts) ? payload.layouts : [];
-  const storedLayouts = mapLayoutsForPublicIndex(readStoredBrandConfigs());
+  const runtimeBrandConfigs = readStoredBrandConfigs();
+  const storedLayouts = mapLayoutsForPublicIndex(runtimeBrandConfigs);
   const mergedLayouts = new Map();
 
-  staticLayouts.forEach((layout) => {
-    if (layout?.id) {
-      mergedLayouts.set(layout.id, layout);
-    }
-  });
+  // Runtime storage is authoritative once it exists. Only fall back to the
+  // stale build-time snapshot (baked from old seed data) when there is no
+  // runtime storage at all, otherwise deleted layouts keep reappearing.
+  if (!runtimeBrandConfigs) {
+    const payload = readJsonFile(builtLayoutIndexFile) ?? readJsonFile(sourceLayoutIndexFile);
+    const staticLayouts = Array.isArray(payload?.layouts) ? payload.layouts : [];
+    staticLayouts.forEach((layout) => {
+      if (layout?.id) {
+        mergedLayouts.set(layout.id, layout);
+      }
+    });
+  }
 
   storedLayouts.forEach((layout) => {
     mergedLayouts.set(layout.id, layout);
