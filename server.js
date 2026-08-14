@@ -52,6 +52,7 @@ const layoutsFile = process.env.LAYOUTS_FILE_PATH
   : path.join(dataDir, 'brand-configs.runtime.json');
 const legacyLayoutsFile = path.join(dataDir, 'brand-configs.json');
 const proofsIndexFile = path.join(dataDir, 'proofs-index.json');
+const settingsFile = path.join(dataDir, 'app-settings.json');
 const builtLayoutIndexFile = path.join(distDir, 'layout-index.json');
 const sourceLayoutIndexFile = path.join(publicDir, 'layout-index.json');
 const ADMIN_SESSION_COOKIE = 'theme_vault_admin_session';
@@ -231,6 +232,14 @@ const readBrandConfigsFromFile = (targetFile) => {
 
 const readStoredBrandConfigs = () => readBrandConfigsFromFile(layoutsFile);
 const readLegacyBrandConfigs = () => readBrandConfigsFromFile(legacyLayoutsFile);
+
+const readStoredSettings = () => {
+  const payload = readJsonFile(settingsFile);
+  if (!payload || typeof payload !== 'object') return null;
+  const settings = payload.settings;
+  if (!settings || typeof settings !== 'object' || Array.isArray(settings)) return null;
+  return settings;
+};
 
 const countLayouts = (brandConfigs) => {
   if (!brandConfigs || typeof brandConfigs !== 'object' || Array.isArray(brandConfigs)) {
@@ -704,6 +713,29 @@ app.get('/api/layouts', (_req, res) => {
   }
 
   return res.json({ brandConfigs });
+});
+
+app.get('/api/settings', (_req, res) => {
+  const settings = readStoredSettings();
+  if (!settings) {
+    return res.status(404).json({ message: 'No stored settings found.' });
+  }
+  return res.json({ settings });
+});
+
+app.put('/api/settings', requireAdmin, (req, res) => {
+  const settings = req.body?.settings;
+  if (!settings || typeof settings !== 'object' || Array.isArray(settings)) {
+    return res.status(400).json({ message: 'Provide a settings object.' });
+  }
+
+  try {
+    fs.writeFileSync(settingsFile, JSON.stringify({ updatedAt: new Date().toISOString(), settings }, null, 2));
+    return res.json({ ok: true });
+  } catch (error) {
+    console.error('Unable to persist settings file', error);
+    return res.status(500).json({ message: 'Unable to persist settings.' });
+  }
 });
 
 app.get('/api/layout-sources', requireAdmin, (_req, res) => {

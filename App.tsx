@@ -2472,12 +2472,12 @@ const MainLayout = () => {
           return;
         }
 
-        setBrandConfigs(getBaseBrandConfigs());
+        setBrandConfigs({});
         setLayoutsHydrated(true);
       } catch (error) {
         console.warn('Unable to hydrate persisted layouts.', error);
         if (!cancelled) {
-          setBrandConfigs(getBaseBrandConfigs());
+          setBrandConfigs({});
           setLayoutsHydrated(true);
         }
       }
@@ -2520,6 +2520,30 @@ const MainLayout = () => {
   }, []);
 
   useEffect(() => {
+    let cancelled = false;
+
+    const loadServerSettings = async () => {
+      try {
+        const response = await fetch('/api/settings', { credentials: 'include' });
+        if (!response.ok) return;
+        const payload = await response.json();
+        if (cancelled) return;
+        const serverSettings = payload?.settings;
+        if (!serverSettings || typeof serverSettings !== 'object') return;
+        setSettings((prev) => ({ ...prev, ...serverSettings }));
+      } catch (error) {
+        console.warn('Unable to load app settings from server.', error);
+      }
+    };
+
+    loadServerSettings();
+
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  useEffect(() => {
     if (flowStep === 2 && !selectedLayout) {
       setFlowStep(1);
       setActiveLayoutId(null);
@@ -2547,12 +2571,21 @@ const MainLayout = () => {
 
   const handleSettingsPersist = useCallback((next: AppSettings) => {
     setSettings(next);
-    if (!safeLocalStorage) return;
-    try {
-      safeLocalStorage.setItem(SETTINGS_KEY, JSON.stringify(next));
-    } catch (error) {
-      console.warn('Unable to persist settings.', error);
+    if (safeLocalStorage) {
+      try {
+        safeLocalStorage.setItem(SETTINGS_KEY, JSON.stringify(next));
+      } catch (error) {
+        console.warn('Unable to persist settings.', error);
+      }
     }
+    fetch('/api/settings', {
+      method: 'PUT',
+      credentials: 'include',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ settings: next })
+    }).catch((error) => {
+      console.warn('Unable to persist settings to server.', error);
+    });
   }, []);
 
   const handleLogin = async (pass: string) => {
