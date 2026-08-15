@@ -44,6 +44,9 @@ const SHOPIFY_ADMIN_GRAPHQL_URL = SHOPIFY_BASE_URL ? `${SHOPIFY_BASE_URL}/admin/
 const SHOPIFY_CART_ENABLED = Boolean(SHOPIFY_GRAPHQL_URL && SHOPIFY_STOREFRONT_TOKEN);
 const SHOPIFY_TAG_LOOKUP_ENABLED = Boolean(SHOPIFY_BASE_URL);
 const PROOF_EMAIL_ENABLED = Boolean(SMTP_HOST && SMTP_USER && SMTP_PASS);
+const SUPABASE_URL = cleanEnvValue(process.env.SUPABASE_URL)?.replace(/\/+$/, '') || null;
+const SUPABASE_SERVICE_ROLE_KEY = cleanEnvValue(process.env.SUPABASE_SERVICE_ROLE_KEY);
+const SUPABASE_STATE_URL = SUPABASE_URL ? `${SUPABASE_URL}/rest/v1/app_state` : null;
 const distDir = path.resolve(__dirname, 'dist');
 const publicDir = path.resolve(__dirname, 'public');
 const dataDir = path.resolve(__dirname, 'data');
@@ -241,6 +244,53 @@ const readStoredSettings = () => {
   return settings;
 };
 
+const supabaseEnabled = Boolean(SUPABASE_STATE_URL && SUPABASE_SERVICE_ROLE_KEY);
+const supabaseHeaders = () => ({
+  'Content-Type': 'application/json',
+  'Accept': 'application/json',
+  'apikey': SUPABASE_SERVICE_ROLE_KEY,
+  'Authorization': `Bearer ${SUPABASE_SERVICE_ROLE_KEY}`
+});
+
+const loadSupabaseState = async (stateKey) => {
+  if (!supabaseEnabled) return null;
+  const response = await fetch(`${SUPABASE_STATE_URL}?state_key=eq.${encodeURIComponent(stateKey)}&select=state_value`, {
+    headers: supabaseHeaders()
+  });
+  if (!response.ok) throw new Error(`Supabase read failed: ${response.status} ${await response.text()}`);
+  const rows = await response.json();
+  return rows[0]?.state_value ?? null;
+};
+
+const saveSupabaseState = async (stateKey, stateValue) => {
+  if (!supabaseEnabled) return false;
+  const response = await fetch(SUPABASE_STATE_URL, {
+    method: 'POST',
+    headers: { ...supabaseHeaders(), 'Prefer': 'resolution=merge-duplicates,return=minimal' },
+    body: JSON.stringify({ state_key: stateKey, state_value: stateValue, updated_at: new Date().toISOString() })
+  });
+  if (!response.ok) throw new Error(`Supabase write failed: ${response.status} ${await response.text()}`);
+  return true;
+};
+
+const deleteSupabaseState = async (stateKey) => {
+  if (!supabaseEnabled) return false;
+  const response = await fetch(`${SUPABASE_STATE_URL}?state_key=eq.${encodeURIComponent(stateKey)}`, {
+    method: 'DELETE',
+    headers: supabaseHeaders()
+  });
+  if (!response.ok) throw new Error(`Supabase delete failed: ${response.status} ${await response.text()}`);
+  return true;
+};
+
+const loadLayouts = async () => (supabaseEnabled
+  ? await loadSupabaseState('layouts')
+  : readStoredBrandConfigs());
+
+const loadSettings = async () => (supabaseEnabled
+  ? await loadSupabaseState('settings')
+  : readStoredSettings());
+
 const countLayouts = (brandConfigs) => {
   if (!brandConfigs || typeof brandConfigs !== 'object' || Array.isArray(brandConfigs)) {
     return 0;
@@ -292,8 +342,8 @@ const mapLayoutsForPublicIndex = (brandConfigs) => {
   });
 };
 
-const readStaticLayoutIndex = () => {
-  const runtimeBrandConfigs = readStoredBrandConfigs();
+const readStaticLayoutIndex = async () => {
+  const runtimeBrandConfigs = await loadLayouts();
   const storedLayouts = mapLayoutsForPublicIndex(runtimeBrandConfigs);
   const mergedLayouts = new Map();
 
@@ -706,21 +756,31 @@ app.get('/api/shopify-products', async (req, res) => {
   }
 });
 
-app.get('/api/layouts', (_req, res) => {
-  const brandConfigs = readStoredBrandConfigs();
-  if (!brandConfigs) {
-    return res.status(404).json({ message: 'No stored layouts found.' });
-  }
+app.get('/api/layouts', async (_req, res) => {
+  try {
+    const brandConfigs = await loadLayouts();
+    if (!brandConfigs) {
+      return res.status(404).json({ message: 'No stored layouts found.' });
+    }
 
-  return res.json({ brandConfigs });
+    return res.json({ brandConfigs });
+  } catch (error) {
+    console.error('Unable to load persisted layouts.', error);
+    return res.status(502).json({ message: 'Unable to load persisted layouts.' });
+  }
 });
 
-app.get('/api/settings', (_req, res) => {
-  const settings = readStoredSettings();
-  if (!settings) {
-    return res.status(404).json({ message: 'No stored settings found.' });
+app.get('/api/settings', async (_req, res) => {
+  try {
+    const settings = await loadSettings();
+    if (!settings) {
+      return res.status(404).json({ message: 'No stored settings found.' });
+    }
+    return res.json({ settings });
+  } catch (error) {
+    console.error('Unable to load persisted settings.', error);
+    return res.status(502).json({ message: 'Unable to load persisted settings.' });
   }
-  return res.json({ settings });
 });
 
 app.put('/api/settings', requireAdmin, (req, res) => {
@@ -730,8 +790,12 @@ app.put('/api/settings', requireAdmin, (req, res) => {
   }
 
   try {
+    if (supabaseEnabled) {
+      await saveSupabaseState('settings', settings);
+      return res.json({ ok: true, storage: 'supabase' });
+    }
     fs.writeFileSync(settingsFile, JSON.stringify({ updatedAt: new Date().toISOString(), settings }, null, 2));
-    return res.json({ ok: true });
+    return res.json({ ok: true, storage: 'file' });
   } catch (error) {
     console.error('Unable to persist settings file', error);
     return res.status(500).json({ message: 'Unable to persist settings.' });
@@ -760,13 +824,17 @@ app.get('/api/proofs', requireAdmin, (_req, res) => {
   return res.json({ proofs: readProofIndex() });
 });
 
-app.put('/api/layouts', requireAdmin, (req, res) => {
+app.put('/api/layouts', requireAdmin, async (req, res) => {
   const brandConfigs = req.body?.brandConfigs;
   if (!brandConfigs || typeof brandConfigs !== 'object' || Array.isArray(brandConfigs)) {
     return res.status(400).json({ message: 'Provide a brandConfigs object.' });
   }
 
   try {
+    if (supabaseEnabled) {
+      await saveSupabaseState('layouts', brandConfigs);
+      return res.json({ ok: true, storage: 'supabase', layoutCount: countLayouts(brandConfigs) });
+    }
     const payload = {
       updatedAt: new Date().toISOString(),
       brandConfigs
@@ -798,8 +866,12 @@ app.post('/api/layouts/restore-legacy', requireAdmin, (_req, res) => {
   }
 });
 
-app.delete('/api/layouts', requireAdmin, (_req, res) => {
+app.delete('/api/layouts', requireAdmin, async (_req, res) => {
   try {
+    if (supabaseEnabled) {
+      await deleteSupabaseState('layouts');
+      return res.json({ ok: true, storage: 'supabase', message: 'Stored layouts cleared.' });
+    }
     if (fs.existsSync(layoutsFile)) {
       fs.unlinkSync(layoutsFile);
     }
@@ -811,11 +883,16 @@ app.delete('/api/layouts', requireAdmin, (_req, res) => {
   }
 });
 
-app.get('/layout-index.json', (_req, res) => {
-  const payload = readStaticLayoutIndex();
-  res.setHeader('Content-Type', 'application/json; charset=UTF-8');
-  res.setHeader('Access-Control-Allow-Origin', '*');
-  return res.send(JSON.stringify(payload));
+app.get('/layout-index.json', async (_req, res) => {
+  try {
+    const payload = await readStaticLayoutIndex();
+    res.setHeader('Content-Type', 'application/json; charset=UTF-8');
+    res.setHeader('Access-Control-Allow-Origin', '*');
+    return res.send(JSON.stringify(payload));
+  } catch (error) {
+    console.error('Unable to load public layout index.', error);
+    return res.status(502).json({ message: 'Unable to load public layout index.' });
+  }
 });
 
 app.get('/products/:handle.js', async (req, res) => {
