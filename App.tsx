@@ -2314,6 +2314,7 @@ const MainLayout = () => {
   const [settings, setSettings] = useState<AppSettings>(getAppSettings());
   const [brandConfigs, setBrandConfigs] = useState<Record<string, BrandConfig>>({});
   const [layoutsHydrated, setLayoutsHydrated] = useState(false);
+  const [layoutSaveStatus, setLayoutSaveStatus] = useState<'idle' | 'saving' | 'saved' | 'error'>('idle');
   const [isAdmin, setIsAdmin] = useState(false);
   const [adminSessionReady, setAdminSessionReady] = useState(false);
   const initialLayoutId = useMemo(() => getLayoutIdFromQuery(), []);
@@ -2440,9 +2441,19 @@ const MainLayout = () => {
 
   useEffect(() => {
     if (!layoutsHydrated || !isAdmin) return;
-    persistLayouts(brandConfigs).catch((error) => {
-      console.warn('Unable to persist layouts.', error);
-    });
+    let cancelled = false;
+    setLayoutSaveStatus('saving');
+    persistLayouts(brandConfigs)
+      .then(() => {
+        if (!cancelled) setLayoutSaveStatus('saved');
+      })
+      .catch((error) => {
+        console.warn('Unable to persist layouts.', error);
+        if (!cancelled) setLayoutSaveStatus('error');
+      });
+    return () => {
+      cancelled = true;
+    };
   }, [brandConfigs, isAdmin, layoutsHydrated]);
 
   useEffect(() => {
@@ -2632,6 +2643,9 @@ const MainLayout = () => {
             <p className="text-slate-500 font-bold text-sm md:text-base mt-2">Layouts, palettes, proofs, and production metadata in one compact workspace.</p>
           </div>
           <div className="flex flex-wrap gap-4 text-[11px] font-black uppercase tracking-[0.32em] text-slate-400">
+            {layoutSaveStatus === 'saving' && <span className="text-amber-600">Saving layouts…</span>}
+            {layoutSaveStatus === 'saved' && <span className="text-emerald-600">Layouts saved</span>}
+            {layoutSaveStatus === 'error' && <span className="text-red-600">Layout save failed</span>}
           </div>
         </div>
         <AdminDashboard

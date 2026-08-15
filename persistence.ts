@@ -111,9 +111,7 @@ export const loadPersistedLayouts = async (): Promise<Record<string, BrandConfig
 };
 
 export const persistLayouts = async (configs: Record<string, BrandConfig>): Promise<void> => {
-  await persistServerLayouts(configs).catch((error) => {
-    console.warn('Unable to persist layouts to server.', error);
-  });
+  await persistServerLayouts(configs);
 
   const database = await openDatabase();
   if (!database) return;
