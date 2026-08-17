@@ -783,7 +783,7 @@ app.get('/api/settings', async (_req, res) => {
   }
 });
 
-app.put('/api/settings', requireAdmin, (req, res) => {
+app.put('/api/settings', requireAdmin, async (req, res) => {
   const settings = req.body?.settings;
   if (!settings || typeof settings !== 'object' || Array.isArray(settings)) {
     return res.status(400).json({ message: 'Provide a settings object.' });
