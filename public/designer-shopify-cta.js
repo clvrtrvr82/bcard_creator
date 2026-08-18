@@ -19,7 +19,7 @@
   }
 
   function getMatchedLayouts(layouts, productTags) {
-    return layouts.filter((layout) => {
+    const directMatches = layouts.filter((layout) => {
       const layoutTags = Array.isArray(layout && layout.shopifyTags) ? layout.shopifyTags : [];
       const hasMatch = layoutTags.some((tag) => productTags.includes(normalizeTag(tag)));
       if (hasMatch) {
@@ -27,6 +27,18 @@
       }
       return hasMatch;
     });
+
+    if (directMatches.length || !productTags.includes('hi-bcard')) {
+      return directMatches;
+    }
+
+    const visibleLayouts = layouts.filter((layout) => layout && layout.customerVisible !== false);
+    if (visibleLayouts.length === 1) {
+      console.log('[Designer CTA] Using the only customer-visible layout for generic hi-bcard product tag:', visibleLayouts[0].name || visibleLayouts[0].id);
+      return visibleLayouts;
+    }
+
+    return directMatches;
   }
 
   function getMatchedTags(layouts, productTags) {
