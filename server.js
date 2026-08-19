@@ -774,7 +774,7 @@ app.get('/api/settings', async (_req, res) => {
   try {
     const settings = await loadSettings();
     if (!settings) {
-      return res.status(404).json({ message: 'No stored settings found.' });
+      return res.json({ settings: null, storage: supabaseEnabled ? 'supabase' : 'file' });
     }
     return res.json({ settings });
   } catch (error) {
@@ -1085,7 +1085,10 @@ app.post('/cart/add.js', async (req, res) => {
     const payload = await upstream.json();
     if (!upstream.ok) {
       console.error('Shopify cart API error', payload);
-      return res.status(502).json({ message: 'Shopify cart API unreachable.', detail: payload });
+      return res.status(502).json({
+        message: 'Shopify cart API rejected the request.',
+        detail: payload?.errors || payload
+      });
     }
 
     const userErrors = cartId
