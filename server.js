@@ -45,7 +45,7 @@ const SHOPIFY_CART_ENABLED = Boolean(SHOPIFY_GRAPHQL_URL && SHOPIFY_STOREFRONT_T
 const SHOPIFY_TAG_LOOKUP_ENABLED = Boolean(SHOPIFY_BASE_URL);
 const PROOF_EMAIL_ENABLED = Boolean(SMTP_HOST && SMTP_USER && SMTP_PASS);
 const SUPABASE_URL = cleanEnvValue(process.env.SUPABASE_URL)?.replace(/\/+$/, '') || null;
-const SUPABASE_SERVICE_ROLE_KEY = cleanEnvValue(process.env.SUPABASE_SERVICE_ROLE_KEY);
+const SUPABASE_SECRET_KEY = cleanEnvValue(process.env.SUPABASE_SECRET_KEY || process.env.SUPABASE_SERVICE_ROLE_KEY);
 const SUPABASE_STATE_URL = SUPABASE_URL ? `${SUPABASE_URL}/rest/v1/app_state` : null;
 const distDir = path.resolve(__dirname, 'dist');
 const publicDir = path.resolve(__dirname, 'public');
@@ -244,12 +244,12 @@ const readStoredSettings = () => {
   return settings;
 };
 
-const supabaseEnabled = Boolean(SUPABASE_STATE_URL && SUPABASE_SERVICE_ROLE_KEY);
+const supabaseEnabled = Boolean(SUPABASE_STATE_URL && SUPABASE_SECRET_KEY);
 const supabaseHeaders = () => ({
   'Content-Type': 'application/json',
   'Accept': 'application/json',
-  'apikey': SUPABASE_SERVICE_ROLE_KEY,
-  'Authorization': `Bearer ${SUPABASE_SERVICE_ROLE_KEY}`
+  'apikey': SUPABASE_SECRET_KEY,
+  'Authorization': `Bearer ${SUPABASE_SECRET_KEY}`
 });
 
 const loadSupabaseState = async (stateKey) => {
