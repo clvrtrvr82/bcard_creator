@@ -25,7 +25,7 @@ const cleanEnvValue = (value) => {
   return cleaned || undefined;
 };
 const SHOPIFY_STORE_DOMAIN = cleanEnvValue(process.env.SHOPIFY_STORE_DOMAIN);
-const SHOPIFY_API_VERSION = cleanEnvValue(process.env.SHOPIFY_API_VERSION) ?? '2024-01';
+const SHOPIFY_API_VERSION = cleanEnvValue(process.env.SHOPIFY_API_VERSION) ?? '2026-07';
 const SHOPIFY_STOREFRONT_TOKEN = cleanEnvValue(process.env.SHOPIFY_STOREFRONT_TOKEN);
 const SHOPIFY_ADMIN_ACCESS_TOKEN = cleanEnvValue(process.env.SHOPIFY_ADMIN_ACCESS_TOKEN);
 const ADMIN_PASSWORD = process.env.ADMIN_PASSWORD ?? 'admin123';
@@ -1087,6 +1087,7 @@ app.post('/cart/add.js', async (req, res) => {
       console.error('Shopify cart API error', payload);
       return res.status(502).json({
         message: 'Shopify cart API rejected the request.',
+        upstreamStatus: upstream.status,
         detail: payload?.errors || payload
       });
     }

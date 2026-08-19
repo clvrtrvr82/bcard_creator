@@ -1856,7 +1856,10 @@ const CustomizerScreen = ({ layout, onBack, onComplete, settings, productHandle,
         });
         if (!response.ok) {
           const errorPayload = await response.json().catch(() => ({}));
-          throw new Error(errorPayload?.message || 'Cart endpoint unavailable');
+          const detail = errorPayload?.detail
+            ? ` ${typeof errorPayload.detail === 'string' ? errorPayload.detail : JSON.stringify(errorPayload.detail)}`
+            : '';
+          throw new Error(`${errorPayload?.message || 'Cart endpoint unavailable'}${detail}`);
         }
         const result = await response.json();
         if (result?.cartId && isBrowser) {
