@@ -61,7 +61,9 @@ const persistServerLayouts = async (configs: Record<string, BrandConfig>): Promi
   }
 
   if (!response.ok) {
-    throw new Error(`Unable to persist server layouts: ${response.status}`);
+    const payload = await response.json().catch(() => ({}));
+    const detail = payload?.detail ? ` ${payload.detail}` : '';
+    throw new Error(`Unable to persist server layouts: ${response.status}.${detail}`);
   }
 };
 

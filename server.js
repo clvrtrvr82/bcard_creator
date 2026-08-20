@@ -766,7 +766,7 @@ app.get('/api/layouts', async (_req, res) => {
     return res.json({ brandConfigs });
   } catch (error) {
     console.error('Unable to load persisted layouts.', error);
-    return res.status(502).json({ message: 'Unable to load persisted layouts.' });
+    return res.status(502).json({ message: 'Unable to load persisted layouts.', detail: String(error?.message || error) });
   }
 });
 
@@ -779,7 +779,7 @@ app.get('/api/settings', async (_req, res) => {
     return res.json({ settings });
   } catch (error) {
     console.error('Unable to load persisted settings.', error);
-    return res.status(502).json({ message: 'Unable to load persisted settings.' });
+    return res.status(502).json({ message: 'Unable to load persisted settings.', detail: String(error?.message || error) });
   }
 });
 
@@ -798,7 +798,7 @@ app.put('/api/settings', requireAdmin, async (req, res) => {
     return res.json({ ok: true, storage: 'file' });
   } catch (error) {
     console.error('Unable to persist settings file', error);
-    return res.status(500).json({ message: 'Unable to persist settings.' });
+    return res.status(500).json({ message: 'Unable to persist settings.', detail: String(error?.message || error) });
   }
 });
 
@@ -843,7 +843,7 @@ app.put('/api/layouts', requireAdmin, async (req, res) => {
     return res.json({ ok: true, layoutCount: Object.values(brandConfigs).reduce((total, config) => total + (Array.isArray(config?.layouts) ? config.layouts.length : 0), 0) });
   } catch (error) {
     console.error('Unable to persist layouts file', error);
-    return res.status(500).json({ message: 'Unable to persist layouts.' });
+    return res.status(500).json({ message: 'Unable to persist layouts.', detail: String(error?.message || error) });
   }
 });
 
@@ -1082,11 +1082,19 @@ app.post('/cart/add.js', async (req, res) => {
       body: JSON.stringify(cartId ? { query: mutation, variables: { cartId, lines } } : { query: mutation, variables: { input: { lines } } })
     });
 
-    const payload = await upstream.json();
+    const responseText = await upstream.text();
+    let payload;
+    try {
+      payload = responseText ? JSON.parse(responseText) : {};
+    } catch {
+      payload = { raw: responseText.slice(0, 2000) };
+    }
     if (!upstream.ok) {
       console.error('Shopify cart API error', payload);
       return res.status(502).json({
-        message: 'Shopify cart API rejected the request.',
+        message: upstream.status === 401 || upstream.status === 403
+          ? 'Shopify Storefront token was rejected.'
+          : 'Shopify cart API rejected the request.',
         upstreamStatus: upstream.status,
         detail: payload?.errors || payload
       });

@@ -2445,17 +2445,20 @@ const MainLayout = () => {
   useEffect(() => {
     if (!layoutsHydrated || !isAdmin) return;
     let cancelled = false;
-    setLayoutSaveStatus('saving');
-    persistLayouts(brandConfigs)
-      .then(() => {
-        if (!cancelled) setLayoutSaveStatus('saved');
-      })
-      .catch((error) => {
-        console.warn('Unable to persist layouts.', error);
-        if (!cancelled) setLayoutSaveStatus('error');
-      });
+    const saveTimer = window.setTimeout(() => {
+      setLayoutSaveStatus('saving');
+      persistLayouts(brandConfigs)
+        .then(() => {
+          if (!cancelled) setLayoutSaveStatus('saved');
+        })
+        .catch((error) => {
+          console.warn('Unable to persist layouts.', error);
+          if (!cancelled) setLayoutSaveStatus('error');
+        });
+    }, 500);
     return () => {
       cancelled = true;
+      window.clearTimeout(saveTimer);
     };
   }, [brandConfigs, isAdmin, layoutsHydrated]);
 
