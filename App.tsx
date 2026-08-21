@@ -2442,23 +2442,55 @@ const MainLayout = () => {
     };
   }, []);
 
+  const layoutSaveInFlightRef = useRef(false);
+  const layoutSavePendingRef = useRef<Record<string, BrandConfig> | null>(null);
+  const layoutSaveTimerRef = useRef<number | null>(null);
+
   useEffect(() => {
     if (!layoutsHydrated || !isAdmin) return;
-    let cancelled = false;
-    const saveTimer = window.setTimeout(() => {
+
+    // Rapid edits (e.g. dragging a field) can generate many state updates in a
+    // row. Coalesce them into a single save, and never let more than one save
+    // request run at a time so a slow/failing server isn't hammered with an
+    // overlapping burst of requests.
+    const runSave = (configs: Record<string, BrandConfig>) => {
+      if (layoutSaveInFlightRef.current) {
+        layoutSavePendingRef.current = configs;
+        return;
+      }
+      layoutSaveInFlightRef.current = true;
       setLayoutSaveStatus('saving');
-      persistLayouts(brandConfigs)
+      persistLayouts(configs)
         .then(() => {
-          if (!cancelled) setLayoutSaveStatus('saved');
+          setLayoutSaveStatus('saved');
         })
         .catch((error) => {
           console.warn('Unable to persist layouts.', error);
-          if (!cancelled) setLayoutSaveStatus('error');
+          setLayoutSaveStatus('error');
+        })
+        .finally(() => {
+          layoutSaveInFlightRef.current = false;
+          const nextPending = layoutSavePendingRef.current;
+          if (nextPending) {
+            layoutSavePendingRef.current = null;
+            runSave(nextPending);
+          }
         });
-    }, 500);
+    };
+
+    if (layoutSaveTimerRef.current) {
+      window.clearTimeout(layoutSaveTimerRef.current);
+    }
+    layoutSaveTimerRef.current = window.setTimeout(() => {
+      layoutSaveTimerRef.current = null;
+      runSave(brandConfigs);
+    }, 1200);
+
     return () => {
-      cancelled = true;
-      window.clearTimeout(saveTimer);
+      if (layoutSaveTimerRef.current) {
+        window.clearTimeout(layoutSaveTimerRef.current);
+        layoutSaveTimerRef.current = null;
+      }
     };
   }, [brandConfigs, isAdmin, layoutsHydrated]);
 
