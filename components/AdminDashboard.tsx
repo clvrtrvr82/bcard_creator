@@ -407,7 +407,6 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({ brandConfigs, onBrandCo
     onBrandConfigsChange(clone);
     setSelectedLayoutId(workingLayout.id);
     setWorkingLayout((current) => (current ? { ...normalizedLayout, name: trimmedName } : current));
-    pushMessage('Layout saved.');
   };
 
   const handleDuplicateLayout = () => {

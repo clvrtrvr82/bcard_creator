@@ -1849,17 +1849,26 @@ const CustomizerScreen = ({ layout, onBack, onComplete, settings, productHandle,
             }
           ]
         };
-        const response = await fetch('/cart/add.js', {
+        // Render's free-tier backend can 502 while the instance is cold-starting; retry once after a short wait.
+        const postCartAdd = () => fetch('/cart/add.js', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify(payload)
         });
+        let response = await postCartAdd();
+        if (response.status === 502) {
+          await new Promise((resolve) => setTimeout(resolve, 3000));
+          response = await postCartAdd();
+        }
         if (!response.ok) {
           const errorPayload = await response.json().catch(() => ({}));
           const detail = errorPayload?.detail
             ? ` ${typeof errorPayload.detail === 'string' ? errorPayload.detail : JSON.stringify(errorPayload.detail)}`
             : '';
-          throw new Error(`${errorPayload?.message || 'Cart endpoint unavailable'}${detail}`);
+          const message = response.status === 502
+            ? 'The server is still starting up. Please try again in a moment.'
+            : `${errorPayload?.message || 'Cart endpoint unavailable'}${detail}`;
+          throw new Error(message);
         }
         const result = await response.json();
         if (result?.cartId && isBrowser) {

@@ -207,6 +207,11 @@
     }
     console.log('[Designer CTA] Found ' + mounts.length + ' mount(s)');
 
+    mounts.forEach((mount) => {
+      if (mount.getAttribute('data-designer-rendered') === 'true') return;
+      mount.innerHTML = '<span style="display:inline-block;padding:12px 18px;color:#6b7280;font-weight:600;">Loading customizer…</span>';
+    });
+
     const layouts = await loadLayouts();
     console.log('[Designer CTA] Loaded ' + layouts.length + ' layout(s):', layouts.map((l) => ({ id: l.id, name: l.name, tags: l.shopifyTags })));
 
@@ -245,6 +250,7 @@
           .map((tag) => normalizeTag(tag));
         console.warn('[Designer CTA] Layout tags (normalized): ' + flatLayoutTags.join(' | '));
         console.warn('[Designer CTA] Product tags (normalized): ' + productTags.join(' | '));
+        mount.innerHTML = '';
         return;
       }
 
