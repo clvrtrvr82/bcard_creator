@@ -283,13 +283,33 @@ const deleteSupabaseState = async (stateKey) => {
   return true;
 };
 
-const loadLayouts = async () => (supabaseEnabled
-  ? await loadSupabaseState('layouts')
-  : readStoredBrandConfigs());
+// Last known-good reads, served if Supabase is temporarily unreachable so an outage there doesn't 502 the whole site.
+let cachedSupabaseLayouts = null;
+let cachedSupabaseSettings = null;
 
-const loadSettings = async () => (supabaseEnabled
-  ? await loadSupabaseState('settings')
-  : readStoredSettings());
+const loadLayouts = async () => {
+  if (!supabaseEnabled) return readStoredBrandConfigs();
+  try {
+    const layouts = await loadSupabaseState('layouts');
+    cachedSupabaseLayouts = layouts;
+    return layouts;
+  } catch (error) {
+    console.error('Supabase layouts read failed, serving last known-good copy.', error);
+    return cachedSupabaseLayouts;
+  }
+};
+
+const loadSettings = async () => {
+  if (!supabaseEnabled) return readStoredSettings();
+  try {
+    const settings = await loadSupabaseState('settings');
+    cachedSupabaseSettings = settings;
+    return settings;
+  } catch (error) {
+    console.error('Supabase settings read failed, serving last known-good copy.', error);
+    return cachedSupabaseSettings;
+  }
+};
 
 const countLayouts = (brandConfigs) => {
   if (!brandConfigs || typeof brandConfigs !== 'object' || Array.isArray(brandConfigs)) {

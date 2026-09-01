@@ -1,9 +1,12 @@
 (function () {
   const APP_BASE_URL = 'https://bcard-creator.onrender.com';
+  // Used only if /layout-index.json is unreachable; keep in sync with the tags on live layouts so the button still shows during backend outages.
   const fallbackLayouts = [
     { shopifyTags: ['holiday-inn-card', 'holiday-inn-v2'] },
     { shopifyTags: ['holiday-inn-card', 'holiday-inn'] },
-    { shopifyTags: ['holiday-inn-express-card', 'holiday-inn-express'] }
+    { shopifyTags: ['holiday-inn-express-card', 'holiday-inn-express'] },
+    { shopifyTags: ['4018', 'delta', 'hi-bcard'] },
+    { shopifyTags: ['hiex-bcard'] }
   ];
 
   function normalizeTag(tag) {
