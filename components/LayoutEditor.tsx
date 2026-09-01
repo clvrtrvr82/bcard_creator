@@ -161,6 +161,7 @@ const LayoutEditor: React.FC<LayoutEditorProps> = ({ layout, onChange, settings,
   const [showPreviewOverlay, setShowPreviewOverlay] = useState(false);
   const [previewOverlayOpacity, setPreviewOverlayOpacity] = useState(0.55);
   const [showShopifyAssignment, setShowShopifyAssignment] = useState(false);
+  const [tagInput, setTagInput] = useState('');
   const [fieldBounds, setFieldBounds] = useState<Record<string, { top: number; left: number; width: number; height: number }>>({});
   const [fieldEditorZoom, setFieldEditorZoom] = useState(DEFAULT_FIELD_EDITOR_ZOOM);
   const canvasRef = useRef<HTMLDivElement>(null);
@@ -769,23 +770,36 @@ const LayoutEditor: React.FC<LayoutEditorProps> = ({ layout, onChange, settings,
   };
 
   const handleApplyShopifyProduct = (product: ShopifyProductSummary) => {
-    const normalizedTags = product.tags.map(normalizeShopifyToken).filter(Boolean);
-
     commitLayout((draft) => {
       draft.shopifyProductHandle = product.handle;
-      draft.shopifyTags = Array.from(new Set(normalizedTags));
     });
 
-    pushMessage(`Linked layout to Shopify product ${product.title}.`);
+    pushMessage(`Linked layout to Shopify product ${product.title} for variant pricing.`);
   };
 
   const handleClearShopifyProduct = () => {
     commitLayout((draft) => {
       draft.shopifyProductHandle = '';
-      draft.shopifyTags = [];
     });
 
     pushMessage('Shopify product link cleared.');
+  };
+
+  const handleAddShopifyTag = () => {
+    const normalized = normalizeShopifyToken(tagInput);
+    if (!normalized) return;
+    commitLayout((draft) => {
+      const existing = new Set(draft.shopifyTags || []);
+      existing.add(normalized);
+      draft.shopifyTags = Array.from(existing);
+    });
+    setTagInput('');
+  };
+
+  const handleRemoveShopifyTag = (tag: string) => {
+    commitLayout((draft) => {
+      draft.shopifyTags = (draft.shopifyTags || []).filter((existingTag) => existingTag !== tag);
+    });
   };
 
   const handleLoadMoreProducts = () => {
@@ -1528,10 +1542,43 @@ const LayoutEditor: React.FC<LayoutEditorProps> = ({ layout, onChange, settings,
         </div>
         {showShopifyAssignment ? (
           <>
+        <div className="space-y-2">
+          <p className="text-[11px] font-black uppercase tracking-[0.24em] text-slate-400">Trigger Tags</p>
+          <p className="text-[11px] leading-relaxed text-slate-500">Any Shopify product carrying one of these tags will show this layout&apos;s button on the storefront. No product picking required.</p>
+          <div className="flex items-center gap-2.5">
+            <input
+              value={tagInput}
+              onChange={(e) => setTagInput(e.target.value)}
+              onKeyDown={(e) => {
+                if (e.key === 'Enter') {
+                  e.preventDefault();
+                  handleAddShopifyTag();
+                }
+              }}
+              placeholder="Add a tag, e.g. hi-bcard"
+              className="flex-1 px-3.5 py-2.5 rounded-xl bg-white border border-slate-200 text-sm"
+            />
+            <button type="button" onClick={handleAddShopifyTag} className="shrink-0 rounded-xl bg-slate-900 px-4 py-2.5 text-[11px] font-black uppercase tracking-[0.24em] text-white">
+              Add Tag
+            </button>
+          </div>
+          <div className="flex flex-wrap gap-2.5">
+            {(layout.shopifyTags || []).length ? (layout.shopifyTags || []).map((tag) => (
+              <span key={tag} className="inline-flex items-center gap-2 px-3 py-1.5 rounded-full bg-slate-900 text-white text-[11px] font-black uppercase tracking-[0.3em]">
+                {tag}
+                <button type="button" onClick={() => handleRemoveShopifyTag(tag)} aria-label={`Remove tag ${tag}`} className="text-slate-300 hover:text-white">
+                  ×
+                </button>
+              </span>
+            )) : (
+              <span className="text-xs text-slate-500">No tags yet. Add one above so matching products show this layout.</span>
+            )}
+          </div>
+        </div>
         <div className="space-y-3 rounded-2xl border border-slate-200 bg-slate-50 p-4">
           <div className="flex items-center justify-between gap-3">
             <div>
-              <p className="text-[11px] font-black uppercase tracking-[0.3em] text-slate-400">Assigned Product</p>
+              <p className="text-[11px] font-black uppercase tracking-[0.3em] text-slate-400">Variant Pricing Product (optional)</p>
               <p className="mt-1 text-sm font-semibold text-slate-900">{layout.shopifyProductHandle || 'No Shopify product linked yet'}</p>
             </div>
             {layout.shopifyProductHandle && (
@@ -1598,23 +1645,11 @@ const LayoutEditor: React.FC<LayoutEditorProps> = ({ layout, onChange, settings,
               )}
             </div>
           )}
-          <p className="text-[11px] leading-relaxed text-slate-500">Selecting a product stores its handle on the layout and auto-syncs trigger tags from that product. Manual tag edits are disabled to keep mapping consistent.</p>
-        </div>
-        <div className="space-y-2">
-          <p className="text-[11px] font-black uppercase tracking-[0.24em] text-slate-400">Synced Product Tags</p>
-          <div className="flex flex-wrap gap-2.5">
-            {(layout.shopifyTags || []).length ? (layout.shopifyTags || []).map((tag) => (
-              <span key={tag} className="px-3 py-1.5 rounded-full bg-slate-900 text-white text-[11px] font-black uppercase tracking-[0.3em]">
-                {tag}
-              </span>
-            )) : (
-              <span className="text-xs text-slate-500">No synced tags yet. Assign a Shopify product to populate tags.</span>
-            )}
-          </div>
+          <p className="text-[11px] leading-relaxed text-slate-500">This only links a specific product so the designer can sync its variant pricing/options. It does not affect which products show the button — that&apos;s controlled by the tags above.</p>
         </div>
           </>
         ) : (
-          <p className="text-xs text-slate-500">Assign a Shopify product to map this layout and sync trigger tags.</p>
+          <p className="text-xs text-slate-500">Add trigger tags so any matching Shopify product shows this layout.</p>
         )}
         <div className="grid grid-cols-1 gap-4">
           <label className="text-[11px] font-black uppercase tracking-[0.3em] text-slate-400">Template / Production Notes
