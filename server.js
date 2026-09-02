@@ -28,6 +28,8 @@ const SHOPIFY_STORE_DOMAIN = cleanEnvValue(process.env.SHOPIFY_STORE_DOMAIN);
 const SHOPIFY_API_VERSION = cleanEnvValue(process.env.SHOPIFY_API_VERSION) ?? '2026-07';
 const SHOPIFY_STOREFRONT_TOKEN = cleanEnvValue(process.env.SHOPIFY_STOREFRONT_TOKEN);
 const SHOPIFY_ADMIN_ACCESS_TOKEN = cleanEnvValue(process.env.SHOPIFY_ADMIN_ACCESS_TOKEN);
+const SHOPIFY_ADMIN_CLIENT_ID = cleanEnvValue(process.env.SHOPIFY_ADMIN_CLIENT_ID);
+const SHOPIFY_ADMIN_CLIENT_SECRET = cleanEnvValue(process.env.SHOPIFY_ADMIN_CLIENT_SECRET);
 const ADMIN_PASSWORD = process.env.ADMIN_PASSWORD ?? 'admin123';
 const ADMIN_SESSION_SECRET = process.env.ADMIN_SESSION_SECRET ?? 'theme-vault-admin-session';
 const SMTP_HOST = process.env.SMTP_HOST;
@@ -41,6 +43,9 @@ const normalizedShopDomain = SHOPIFY_STORE_DOMAIN?.replace(/^https?:\/\//i, '').
 const SHOPIFY_BASE_URL = normalizedShopDomain ? `https://${normalizedShopDomain}` : null;
 const SHOPIFY_GRAPHQL_URL = SHOPIFY_BASE_URL ? `${SHOPIFY_BASE_URL}/api/${SHOPIFY_API_VERSION}/graphql.json` : null;
 const SHOPIFY_ADMIN_GRAPHQL_URL = SHOPIFY_BASE_URL ? `${SHOPIFY_BASE_URL}/admin/api/${SHOPIFY_API_VERSION}/graphql.json` : null;
+const SHOPIFY_ADMIN_OAUTH_TOKEN_URL = SHOPIFY_BASE_URL ? `${SHOPIFY_BASE_URL}/admin/oauth/access_token` : null;
+// Newer custom apps only issue a Client ID/Secret; a static Admin API access token still works for legacy custom apps.
+const SHOPIFY_ADMIN_CONFIGURED = Boolean(SHOPIFY_ADMIN_ACCESS_TOKEN || (SHOPIFY_ADMIN_CLIENT_ID && SHOPIFY_ADMIN_CLIENT_SECRET));
 const SHOPIFY_CART_ENABLED = Boolean(SHOPIFY_GRAPHQL_URL && SHOPIFY_STOREFRONT_TOKEN);
 const SHOPIFY_TAG_LOOKUP_ENABLED = Boolean(SHOPIFY_BASE_URL);
 const PROOF_EMAIL_ENABLED = Boolean(SMTP_HOST && SMTP_USER && SMTP_PASS);
@@ -427,8 +432,8 @@ const maskSecret = (value) => {
 };
 
 const testShopifyAdminToken = async () => {
-  if (!SHOPIFY_ADMIN_GRAPHQL_URL || !SHOPIFY_ADMIN_ACCESS_TOKEN) {
-    return { ok: false, reason: 'Admin token or URL missing.' };
+  if (!SHOPIFY_ADMIN_GRAPHQL_URL || !SHOPIFY_ADMIN_CONFIGURED) {
+    return { ok: false, reason: 'Admin credentials or URL missing.' };
   }
 
   try {
@@ -548,8 +553,46 @@ const fetchStorefrontProductCatalog = async () => {
   return products;
 };
 
+// Cached client-credentials token; Shopify no longer shows a static Admin API token for new custom apps, so we exchange
+// the Client ID/Secret for a short-lived (24h) token and refresh it automatically as it nears expiry.
+let cachedAdminAccessToken = null;
+let cachedAdminAccessTokenExpiresAt = 0;
+
+const getShopifyAdminAccessToken = async () => {
+  if (SHOPIFY_ADMIN_ACCESS_TOKEN) return SHOPIFY_ADMIN_ACCESS_TOKEN;
+  if (!SHOPIFY_ADMIN_CLIENT_ID || !SHOPIFY_ADMIN_CLIENT_SECRET || !SHOPIFY_ADMIN_OAUTH_TOKEN_URL) return null;
+
+  if (cachedAdminAccessToken && Date.now() < cachedAdminAccessTokenExpiresAt - 60_000) {
+    return cachedAdminAccessToken;
+  }
+
+  const response = await fetch(SHOPIFY_ADMIN_OAUTH_TOKEN_URL, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+    body: new URLSearchParams({
+      grant_type: 'client_credentials',
+      client_id: SHOPIFY_ADMIN_CLIENT_ID,
+      client_secret: SHOPIFY_ADMIN_CLIENT_SECRET
+    })
+  });
+
+  if (!response.ok) {
+    throw new Error(`Shopify admin token exchange failed: ${response.status} ${await response.text()}`);
+  }
+
+  const payload = await response.json();
+  cachedAdminAccessToken = payload.access_token;
+  cachedAdminAccessTokenExpiresAt = Date.now() + Number(payload.expires_in ?? 0) * 1000;
+  return cachedAdminAccessToken;
+};
+
 const fetchShopifyAdminGraphQL = async (query, variables = {}) => {
-  if (!SHOPIFY_ADMIN_GRAPHQL_URL || !SHOPIFY_ADMIN_ACCESS_TOKEN) {
+  if (!SHOPIFY_ADMIN_GRAPHQL_URL || !SHOPIFY_ADMIN_CONFIGURED) {
+    throw new Error('Shopify Admin API not configured.');
+  }
+
+  const accessToken = await getShopifyAdminAccessToken();
+  if (!accessToken) {
     throw new Error('Shopify Admin API not configured.');
   }
 
@@ -558,7 +601,7 @@ const fetchShopifyAdminGraphQL = async (query, variables = {}) => {
     headers: {
       'Content-Type': 'application/json',
       'Accept': 'application/json',
-      'X-Shopify-Access-Token': SHOPIFY_ADMIN_ACCESS_TOKEN
+      'X-Shopify-Access-Token': accessToken
     },
     body: JSON.stringify({ query, variables })
   });
@@ -715,11 +758,12 @@ app.get('/api/shopify-diagnostics', requireAdmin, async (_req, res) => {
       storefrontGraphqlUrl: SHOPIFY_GRAPHQL_URL,
       envPresence: {
         shopDomain: Boolean(SHOPIFY_STORE_DOMAIN),
-        adminToken: Boolean(SHOPIFY_ADMIN_ACCESS_TOKEN),
+        adminToken: SHOPIFY_ADMIN_CONFIGURED,
         storefrontToken: Boolean(SHOPIFY_STOREFRONT_TOKEN)
       },
       envFingerprint: {
         adminToken: maskSecret(SHOPIFY_ADMIN_ACCESS_TOKEN),
+        adminClientId: maskSecret(SHOPIFY_ADMIN_CLIENT_ID),
         storefrontToken: maskSecret(SHOPIFY_STOREFRONT_TOKEN)
       },
       checks: {
@@ -741,7 +785,7 @@ app.get('/api/shopify-products', async (req, res) => {
   const cursor = String(req.query.cursor || '').trim() || null;
 
   try {
-    if (SHOPIFY_ADMIN_ACCESS_TOKEN) {
+    if (SHOPIFY_ADMIN_CONFIGURED) {
       try {
         const payload = await fetchAdminProducts({ query, limit, cursor });
         return res.json(payload);
@@ -921,7 +965,7 @@ app.get('/products/:handle.js', async (req, res) => {
     return res.status(501).json({ message: check.message });
   }
   const handle = req.params.handle;
-  if (SHOPIFY_ADMIN_ACCESS_TOKEN) {
+  if (SHOPIFY_ADMIN_CONFIGURED) {
     try {
       const product = await fetchAdminProductByHandle(handle);
       if (product) {
@@ -976,7 +1020,7 @@ app.get('/api/shopify-products-by-tags', async (req, res) => {
   }
 
   try {
-    if (SHOPIFY_ADMIN_ACCESS_TOKEN) {
+    if (SHOPIFY_ADMIN_CONFIGURED) {
       try {
         const matches = await fetchAdminProductsByTags(tags);
         if (!matches.length) {
@@ -1266,6 +1310,7 @@ app.listen(PORT, HOST, () => {
     shop: normalizedShopDomain,
     apiVersion: SHOPIFY_API_VERSION,
     storefrontToken: maskSecret(SHOPIFY_STOREFRONT_TOKEN),
-    adminToken: maskSecret(SHOPIFY_ADMIN_ACCESS_TOKEN)
+    adminToken: maskSecret(SHOPIFY_ADMIN_ACCESS_TOKEN),
+    adminClientId: maskSecret(SHOPIFY_ADMIN_CLIENT_ID)
   });
 });

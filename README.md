@@ -45,7 +45,7 @@ There is no active `bootstrap` script in the current `package.json`.
 3. Set the environment values you need:
    - `SHOPIFY_STORE_DOMAIN`
    - Optional `SHOPIFY_STOREFRONT_TOKEN`
-   - Optional `SHOPIFY_ADMIN_ACCESS_TOKEN`
+   - Optional `SHOPIFY_ADMIN_CLIENT_ID` + `SHOPIFY_ADMIN_CLIENT_SECRET` (client credentials grant; required for new custom apps, which no longer show a static token) or legacy `SHOPIFY_ADMIN_ACCESS_TOKEN`
    - Optional `SHOPIFY_API_VERSION`
    - Optional `HOST`
    - Optional `PORT`
@@ -77,7 +77,7 @@ There is no active `bootstrap` script in the current `package.json`.
 ### Product lookup
 
 - `GET /products/:handle.js` works when `SHOPIFY_STORE_DOMAIN` is configured.
-- If `SHOPIFY_ADMIN_ACCESS_TOKEN` is present, the server tries Shopify Admin first and falls back to storefront product JSON when needed.
+- If Admin API credentials are present (`SHOPIFY_ADMIN_CLIENT_ID`+`SHOPIFY_ADMIN_CLIENT_SECRET`, or legacy `SHOPIFY_ADMIN_ACCESS_TOKEN`), the server tries Shopify Admin first and falls back to storefront product JSON when needed. Client ID/secret are exchanged for a 24h access token via the client credentials grant, cached in memory and refreshed automatically.
 
 ### Tag lookup
 
