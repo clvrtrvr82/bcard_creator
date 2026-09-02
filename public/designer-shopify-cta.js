@@ -68,13 +68,16 @@
     if (!matchedLayouts.length) return;
 
     const matchedTags = getMatchedTags(matchedLayouts, productTags);
+    const singleMatch = matchedLayouts.length === 1 && matchedLayouts[0] && matchedLayouts[0].id;
 
     const params = new URLSearchParams();
     params.set('product', productHandle);
-    if (matchedTags.length) {
+    // The app only reads "tags" to filter its selection screen when it doesn't already know the exact layout.
+    // A single match is identified by layoutId alone, so skip putting tags in the URL for that (common) case.
+    if (!singleMatch && matchedTags.length) {
       params.set('tags', matchedTags.join(','));
     }
-    if (matchedLayouts.length === 1 && matchedLayouts[0] && matchedLayouts[0].id) {
+    if (singleMatch) {
       params.set('layoutId', matchedLayouts[0].id);
     }
     if (typeof window !== 'undefined' && window.location && window.location.href) {

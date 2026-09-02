@@ -508,7 +508,7 @@ const mapAdminProduct = (product) => {
       id: String(variant?.legacyResourceId || '').trim(),
       title: variant?.title,
       price: variant?.price,
-      available: variant?.inventoryQuantity == null ? true : variant.inventoryQuantity > 0
+      available: variant?.availableForSale !== false
     })))
   };
 };
@@ -629,7 +629,7 @@ const fetchAdminProductByHandle = async (handle) => {
                 legacyResourceId
                 title
                 price
-                inventoryQuantity
+                availableForSale
               }
             }
           }
@@ -657,7 +657,7 @@ const fetchAdminProductsByTags = async (tags) => {
                 legacyResourceId
                 title
                 price
-                inventoryQuantity
+                availableForSale
               }
             }
           }
