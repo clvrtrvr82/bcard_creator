@@ -1861,11 +1861,12 @@ const CustomizerScreen = ({ layout, onBack, onComplete, settings, productHandle,
           response = await postCartAdd();
         }
         if (!response.ok) {
-          const errorPayload = await response.json().catch(() => ({}));
+          const errorPayload = await response.json().catch(() => null);
           const detail = errorPayload?.detail
             ? ` ${typeof errorPayload.detail === 'string' ? errorPayload.detail : JSON.stringify(errorPayload.detail)}`
             : '';
-          const message = response.status === 502
+          // A 502 with no parseable body is Render's own cold-start proxy error; a 502 with a body is a real error from our server.
+          const message = response.status === 502 && !errorPayload
             ? 'The server is still starting up. Please try again in a moment.'
             : `${errorPayload?.message || 'Cart endpoint unavailable'}${detail}`;
           throw new Error(message);
