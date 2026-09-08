@@ -72,6 +72,8 @@ if (!fs.existsSync(path.join(distDir, 'index.html'))) {
 
 const app = express();
 app.disable('x-powered-by');
+// Render sits behind a proxy; trust it so req.ip reflects the real buyer IP for Shopify-Storefront-Buyer-IP.
+app.set('trust proxy', true);
 app.use(express.json({ limit: '25mb' }));
 
 const proofsDir = path.join(__dirname, 'proofs');
@@ -459,7 +461,8 @@ const testShopifyStorefrontToken = async () => {
       headers: {
         'Content-Type': 'application/json',
         'Accept': 'application/json',
-        'X-Shopify-Storefront-Access-Token': SHOPIFY_STOREFRONT_TOKEN
+        // Headless-channel tokens are private access tokens, which use this header, not X-Shopify-Storefront-Access-Token.
+        'Shopify-Storefront-Private-Token': SHOPIFY_STOREFRONT_TOKEN
       },
       body: JSON.stringify({ query: 'query { shop { name primaryDomain { url } } }' })
     });
@@ -1141,7 +1144,9 @@ app.post('/cart/add.js', async (req, res) => {
       headers: {
         'Content-Type': 'application/json',
         'Accept': 'application/json',
-        'X-Shopify-Storefront-Access-Token': SHOPIFY_STOREFRONT_TOKEN
+        // Headless-channel tokens are private access tokens, which use this header, not X-Shopify-Storefront-Access-Token.
+        'Shopify-Storefront-Private-Token': SHOPIFY_STOREFRONT_TOKEN,
+        'Shopify-Storefront-Buyer-IP': String(req.ip || req.headers['x-forwarded-for'] || '').split(',')[0].trim()
       },
       body: JSON.stringify(cartId ? { query: mutation, variables: { cartId, lines } } : { query: mutation, variables: { input: { lines } } })
     });
