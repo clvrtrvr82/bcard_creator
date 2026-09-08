@@ -2250,6 +2250,21 @@ const CustomizerScreen = ({ layout, onBack, onComplete, settings, productHandle,
           >
             Add Another Name
           </button>
+          {returnUrl && (
+            <button
+              onClick={() => {
+                setPostAddCartState({ open: false, checkoutUrl: null });
+                try {
+                  window.location.href = new URL(returnUrl).origin;
+                } catch {
+                  window.location.href = returnUrl;
+                }
+              }}
+              className="rounded-2xl border border-slate-200 px-5 py-3 text-[11px] font-black uppercase tracking-[0.3em] text-slate-600"
+            >
+              Continue Shopping
+            </button>
+          )}
           <button
             onClick={() => {
               const checkoutUrl = postAddCartState.checkoutUrl;
