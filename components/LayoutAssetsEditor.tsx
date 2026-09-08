@@ -47,7 +47,6 @@ const formatFontName = (fileName: string) => {
 
 const LayoutAssetsEditor: React.FC<LayoutAssetsEditorProps> = ({ layout, onChange }) => {
   const [activeSide, setActiveSide] = useState<'front' | 'back'>('front');
-  const [customFontInput, setCustomFontInput] = useState('');
   const [presetColorInput, setPresetColorInput] = useState<CMYK>(DEFAULT_PRESET_CMYK);
   const [presetHexInput, setPresetHexInput] = useState(DEFAULT_PRESET_HEX);
   const [presetRgbInput, setPresetRgbInput] = useState<RGB>(DEFAULT_PRESET_RGB);
@@ -77,17 +76,6 @@ const LayoutAssetsEditor: React.FC<LayoutAssetsEditorProps> = ({ layout, onChang
       return current.c === normalized.c && current.m === normalized.m && current.y === normalized.y && current.k === normalized.k;
     })?.id || '';
   }, [activeSideLayout.cmykBackgroundColor, colorPresets]);
-
-  const handleAddCustomFont = () => {
-    const cleaned = customFontInput.trim();
-    if (!cleaned) return;
-    commitLayout((draft) => {
-      const nextFonts = new Set(draft.customFonts || []);
-      nextFonts.add(cleaned);
-      draft.customFonts = Array.from(nextFonts);
-    });
-    setCustomFontInput('');
-  };
 
   const handleRemoveCustomFont = (font: string) => {
     commitLayout((draft) => {
@@ -223,12 +211,6 @@ const LayoutAssetsEditor: React.FC<LayoutAssetsEditorProps> = ({ layout, onChang
           <div>
             <p className="text-sm font-black uppercase tracking-[0.25em] text-slate-500">Shared Fonts</p>
             <p className="mt-1 text-xs text-slate-500">Anything added here appears in the custom font picker while editing fields.</p>
-          </div>
-          <div className="grid grid-cols-1 md:grid-cols-[minmax(0,1fr)_auto] gap-3 items-end">
-            <label className="text-xs font-semibold text-slate-500">Add Font Name
-              <input value={customFontInput} onChange={(e) => setCustomFontInput(e.target.value)} placeholder="e.g. Gotham, Avenir Next" className="mt-1.5 w-full px-3 py-2.5 rounded-xl bg-slate-50 border border-slate-200 text-sm text-slate-800" />
-            </label>
-            <button type="button" onClick={handleAddCustomFont} className="px-4 py-2.5 rounded-xl bg-slate-900 text-white text-[11px] font-black uppercase tracking-[0.25em]">Add Font</button>
           </div>
           <label className="block text-xs font-semibold text-slate-500">Upload Font File
             <input ref={fontFileInputRef} type="file" accept={FONT_FILE_ACCEPT} onChange={(e) => handleFontUpload(e.target.files?.[0])} className="mt-1.5 block w-full text-[11px] text-slate-600" />
