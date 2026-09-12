@@ -1263,7 +1263,6 @@ const CustomizerScreen = ({ layout, onBack, onComplete, settings, productHandle,
   const [previewSide, setPreviewSide] = useState<'front' | 'back'>('front');
   const [derivedProductHandle, setDerivedProductHandle] = useState<string | null>(null);
   const [productSource, setProductSource] = useState<'query' | 'layout' | 'tags' | null>(null);
-  const [postAddCartState, setPostAddCartState] = useState<{ open: boolean; checkoutUrl: string | null }>({ open: false, checkoutUrl: null });
   const [livePdfPreview, setLivePdfPreview] = useState<{ front: string | null; back: string | null }>({ front: null, back: null });
   const livePreviewRenderToken = useRef(0);
   const proofRef = useRef<HTMLDivElement>(null);
@@ -1838,59 +1837,7 @@ const CustomizerScreen = ({ layout, onBack, onComplete, settings, productHandle,
     setCheckoutStatus('loading');
     try {
       const proof = await uploadPrintReadyPdf();
-      if (cartEnabled) {
-        const payload = {
-          cartId: isBrowser ? safeLocalStorage?.getItem(SHOPIFY_CART_ID_STORAGE_KEY) || undefined : undefined,
-          items: [
-            {
-              id: selectedVariant?.id,
-              quantity: 1,
-              properties: buildLineItemProperties(proof)
-            }
-          ]
-        };
-        // Render's free-tier backend can 502 while the instance is cold-starting; retry once after a short wait.
-        const postCartAdd = () => fetch('/cart/add.js', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify(payload)
-        });
-        let response = await postCartAdd();
-        if (response.status === 502) {
-          await new Promise((resolve) => setTimeout(resolve, 3000));
-          response = await postCartAdd();
-        }
-        if (!response.ok) {
-          const errorPayload = await response.json().catch(() => null);
-          const detail = errorPayload?.detail
-            ? ` ${typeof errorPayload.detail === 'string' ? errorPayload.detail : JSON.stringify(errorPayload.detail)}`
-            : '';
-          // A 502 with no parseable body is Render's own cold-start proxy error; a 502 with a body is a real error from our server.
-          const message = response.status === 502 && !errorPayload
-            ? 'The server is still starting up. Please try again in a moment.'
-            : `${errorPayload?.message || 'Cart endpoint unavailable'}${detail}`;
-          throw new Error(message);
-        }
-        const result = await response.json();
-        if (result?.cartId && isBrowser) {
-          safeLocalStorage?.setItem(SHOPIFY_CART_ID_STORAGE_KEY, String(result.cartId));
-        }
-        onComplete(data);
-        const redirectUrl = result?.checkoutUrl || result?.redirectUrl;
-        if (redirectUrl) {
-          try {
-            const checkoutUrl = new URL(redirectUrl);
-            if (returnUrl) {
-              checkoutUrl.searchParams.set('return_to', returnUrl);
-            }
-            setPostAddCartState({ open: true, checkoutUrl: checkoutUrl.toString() });
-          } catch {
-            setPostAddCartState({ open: true, checkoutUrl: redirectUrl });
-          }
-        } else {
-          setPostAddCartState({ open: true, checkoutUrl: null });
-        }
-      } else if (returnUrl && selectedVariant) {
+      if (returnUrl && selectedVariant) {
         onComplete(data);
         const redirectUrl = buildShopifyCartAddUrl({
           returnUrl,
@@ -2232,73 +2179,12 @@ const CustomizerScreen = ({ layout, onBack, onComplete, settings, productHandle,
     </div>
   );
 
-  const postAddModal = cartEnabled && step === 'quantity' && postAddCartState.open ? (
-    <div className="fixed inset-0 z-[130] flex items-center justify-center bg-slate-950/55 px-4 py-6 backdrop-blur-sm">
-      <div className="w-full max-w-xl rounded-[30px] border border-slate-100 bg-white p-6 shadow-2xl space-y-5">
-        <div>
-          <p className="text-[11px] font-black uppercase tracking-[0.35em] text-emerald-600">Added To Cart</p>
-          <h3 className="mt-2 text-3xl font-black text-slate-900 uppercase tracking-tight">Add Another Name?</h3>
-          <p className="mt-2 text-sm text-slate-500">You can keep adding names to the same cart, then check out once with one combined order.</p>
-        </div>
-        <div className="flex flex-wrap justify-end gap-3">
-          <button
-            onClick={() => {
-              setPostAddCartState({ open: false, checkoutUrl: null });
-              onBack();
-            }}
-            className="rounded-2xl border border-slate-200 px-5 py-3 text-[11px] font-black uppercase tracking-[0.3em] text-slate-600"
-          >
-            Add Another Name
-          </button>
-          {returnUrl && (
-            <button
-              onClick={() => {
-                setPostAddCartState({ open: false, checkoutUrl: null });
-                try {
-                  window.location.href = new URL(returnUrl).origin;
-                } catch {
-                  window.location.href = returnUrl;
-                }
-              }}
-              className="rounded-2xl border border-slate-200 px-5 py-3 text-[11px] font-black uppercase tracking-[0.3em] text-slate-600"
-            >
-              Continue Shopping
-            </button>
-          )}
-          <button
-            onClick={() => {
-              const checkoutUrl = postAddCartState.checkoutUrl;
-              setPostAddCartState({ open: false, checkoutUrl: null });
-              if (checkoutUrl) {
-                window.location.href = checkoutUrl;
-                return;
-              }
-              if (returnUrl) {
-                returnToProductPage({
-                  cardify_status: 'cart_created',
-                  cardify_layout: layout.id,
-                  cardify_variant: String(selectedVariant?.id || '')
-                });
-                return;
-              }
-              alert('Cart was updated but no checkout URL was returned.');
-            }}
-            className="rounded-2xl bg-slate-900 px-5 py-3 text-[11px] font-black uppercase tracking-[0.3em] text-white"
-          >
-            Checkout Now
-          </button>
-        </div>
-      </div>
-    </div>
-  ) : null;
-
   return (
     <div className={`max-w-5xl mx-auto p-6 space-y-8 animate-fadeIn ${step === 'form' ? 'pb-48 lg:pb-6' : ''}`}>
       {step === 'form' && formStep}
       {step === 'proof' && proofStep}
       {step === 'quantity' && quantityStep}
       {mobileLivePreview}
-      {postAddModal}
 
       {showApprovalModal && (
         <div className="fixed inset-0 bg-slate-900/50 backdrop-blur-sm flex items-center justify-center z-50 p-4">
