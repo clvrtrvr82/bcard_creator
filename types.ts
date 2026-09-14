@@ -165,5 +165,9 @@ export interface AppSettings {
   businessAddress: string;
   businessWebsite: string;
   primaryColor: string;
+  accentColor: string;
   logoUrl: string;
+  customerIntro: string;
+  showLogo: boolean;
+  requireApproval: boolean;
 }

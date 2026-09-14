@@ -854,41 +854,86 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({ brandConfigs, onBrandCo
   );
 
   const renderSettings = () => (
-    <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
-      <div className="bg-white border border-slate-100 rounded-[24px] p-6 space-y-4">
-        {(
-          [
-            { key: 'appName', label: 'App Name' },
-            { key: 'businessName', label: 'Business Name' },
-            { key: 'businessEmail', label: 'Support Email' },
-            { key: 'businessPhone', label: 'Support Phone' },
-            { key: 'businessAddress', label: 'Business Address' },
-            { key: 'businessWebsite', label: 'Business Website' },
-            { key: 'primaryColor', label: 'Primary Color' },
-            { key: 'logoUrl', label: 'Logo URL' }
-          ] as { key: keyof AppSettings; label: string }[]
-        ).map(({ key, label }) => (
-          <div key={key} className="space-y-2">
-            <label className="text-[11px] font-black uppercase tracking-[0.3em] text-slate-400">{label}</label>
-            <input
-              value={settingsForm[key]}
-              onChange={(e) => setSettingsForm((prev) => ({ ...prev, [key]: e.target.value }))}
-              className="w-full px-4 py-3 rounded-2xl bg-slate-50 border border-slate-200 text-sm"
-            />
+    <div className="space-y-5">
+      <div className="rounded-[24px] border border-slate-200 bg-white p-5 md:p-6">
+        <div className="flex flex-col gap-3 md:flex-row md:items-end md:justify-between">
+          <div>
+            <p className="text-[11px] font-black uppercase tracking-[0.3em] text-slate-400">Workspace Settings</p>
+            <h2 className="mt-2 text-2xl font-black uppercase tracking-tight text-slate-900">App presentation and customer flow</h2>
+            <p className="mt-2 max-w-2xl text-sm leading-relaxed text-slate-500">These settings control the shared app chrome and the customer experience. Layout-specific fonts, colors, fields, and Shopify tags stay in their respective editors.</p>
           </div>
-        ))}
-        <button onClick={handleSettingsSave} className="w-full flex items-center justify-center gap-2 py-2.5 rounded-xl bg-blue-600 text-white text-[11px] font-black uppercase tracking-[0.3em]">
-          <Save size={16} /> Save Settings
-        </button>
-      </div>
-      <div className="bg-slate-900 text-white rounded-[24px] p-8 space-y-5">
-        <p className="text-[10px] font-black uppercase tracking-[0.35em] text-white/50">Preview Card</p>
-        <div className="bg-white rounded-[24px] p-5">
-          <BusinessCardPreviewPlaceholder settings={settingsForm} />
+          <button onClick={handleSettingsSave} className="inline-flex shrink-0 items-center justify-center gap-2 rounded-xl bg-blue-600 px-5 py-3 text-[11px] font-black uppercase tracking-[0.3em] text-white">
+            <Save size={16} /> Save Settings
+          </button>
         </div>
-        <p className="text-white/70 text-xs leading-relaxed">
-          These settings control defaults for contact data and UI chrome across the entire experience. Updating them here persists for the next session.
-        </p>
+      </div>
+
+      <div className="grid grid-cols-1 gap-5 xl:grid-cols-2">
+        <section className="rounded-[24px] border border-slate-200 bg-white p-5 md:p-6">
+          <p className="text-sm font-black uppercase tracking-[0.25em] text-slate-500">Brand</p>
+          <p className="mt-1 text-xs leading-relaxed text-slate-500">The name, logo, and colors shown in the app header and primary actions.</p>
+          <div className="mt-5 space-y-4">
+            <label className="block text-[11px] font-black uppercase tracking-[0.25em] text-slate-400">App Name
+              <input value={settingsForm.appName} onChange={(e) => setSettingsForm((prev) => ({ ...prev, appName: e.target.value }))} className="mt-2 w-full rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm font-semibold text-slate-800" />
+            </label>
+            <label className="block text-[11px] font-black uppercase tracking-[0.25em] text-slate-400">Logo URL
+              <input type="url" value={settingsForm.logoUrl} onChange={(e) => setSettingsForm((prev) => ({ ...prev, logoUrl: e.target.value }))} placeholder="https://..." className="mt-2 w-full rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm text-slate-800" />
+            </label>
+            <div className="grid grid-cols-2 gap-4">
+              <label className="block text-[11px] font-black uppercase tracking-[0.25em] text-slate-400">Primary Color
+                <div className="mt-2 flex items-center gap-2 rounded-2xl border border-slate-200 bg-slate-50 p-2">
+                  <input type="color" value={settingsForm.primaryColor} onChange={(e) => setSettingsForm((prev) => ({ ...prev, primaryColor: e.target.value }))} className="h-9 w-10 cursor-pointer rounded-lg border-0 bg-transparent" />
+                  <span className="text-xs font-semibold text-slate-600">{settingsForm.primaryColor}</span>
+                </div>
+              </label>
+              <label className="block text-[11px] font-black uppercase tracking-[0.25em] text-slate-400">Accent Color
+                <div className="mt-2 flex items-center gap-2 rounded-2xl border border-slate-200 bg-slate-50 p-2">
+                  <input type="color" value={settingsForm.accentColor} onChange={(e) => setSettingsForm((prev) => ({ ...prev, accentColor: e.target.value }))} className="h-9 w-10 cursor-pointer rounded-lg border-0 bg-transparent" />
+                  <span className="text-xs font-semibold text-slate-600">{settingsForm.accentColor}</span>
+                </div>
+              </label>
+            </div>
+            <label className="flex items-center justify-between gap-4 rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm font-semibold text-slate-700">
+              <span>Show logo in the app header</span>
+              <input type="checkbox" checked={settingsForm.showLogo} onChange={(e) => setSettingsForm((prev) => ({ ...prev, showLogo: e.target.checked }))} className="h-4 w-4 accent-blue-600" />
+            </label>
+          </div>
+        </section>
+
+        <section className="rounded-[24px] border border-slate-200 bg-white p-5 md:p-6">
+          <p className="text-sm font-black uppercase tracking-[0.25em] text-slate-500">Contact</p>
+          <p className="mt-1 text-xs leading-relaxed text-slate-500">Support details used in manual proof and production handoff messages.</p>
+          <div className="mt-5 space-y-4">
+            {([
+              ['businessName', 'Business Name'],
+              ['businessEmail', 'Support Email'],
+              ['businessPhone', 'Support Phone'],
+              ['businessAddress', 'Business Address'],
+              ['businessWebsite', 'Business Website']
+            ] as const).map(([key, label]) => (
+              <label key={key} className="block text-[11px] font-black uppercase tracking-[0.25em] text-slate-400">{label}
+                <input type={key === 'businessEmail' ? 'email' : key === 'businessWebsite' ? 'url' : 'text'} value={settingsForm[key]} onChange={(e) => setSettingsForm((prev) => ({ ...prev, [key]: e.target.value }))} className="mt-2 w-full rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm text-slate-800" />
+              </label>
+            ))}
+          </div>
+        </section>
+
+        <section className="rounded-[24px] border border-slate-200 bg-white p-5 md:p-6 xl:col-span-2">
+          <p className="text-sm font-black uppercase tracking-[0.25em] text-slate-500">Customer Experience</p>
+          <p className="mt-1 text-xs leading-relaxed text-slate-500">Small controls for the first screen and proof approval step.</p>
+          <div className="mt-5 grid grid-cols-1 gap-4 xl:grid-cols-2">
+            <label className="block text-[11px] font-black uppercase tracking-[0.25em] text-slate-400">Introductory Copy
+              <textarea value={settingsForm.customerIntro} onChange={(e) => setSettingsForm((prev) => ({ ...prev, customerIntro: e.target.value }))} rows={3} placeholder="Shown above the customer card details form" className="mt-2 w-full resize-y rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm text-slate-800" />
+            </label>
+            <div className="space-y-3">
+              <label className="flex items-center justify-between gap-4 rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm font-semibold text-slate-700">
+                <span>Require proof approval before quantity</span>
+                <input type="checkbox" checked={settingsForm.requireApproval} onChange={(e) => setSettingsForm((prev) => ({ ...prev, requireApproval: e.target.checked }))} className="h-4 w-4 accent-blue-600" />
+              </label>
+              <p className="px-1 text-xs leading-relaxed text-slate-500">When enabled, customers confirm the proof in a final review modal. Disable it for a faster internal workflow.</p>
+            </div>
+          </div>
+        </section>
       </div>
     </div>
   );
@@ -1162,17 +1207,6 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({ brandConfigs, onBrandCo
       {activeTab === 'assets' && renderAssets()}
       {activeTab === 'operations' && renderOperations()}
       {activeTab === 'settings' && renderSettings()}
-    </div>
-  );
-};
-
-const BusinessCardPreviewPlaceholder: React.FC<{ settings: AppSettings }> = ({ settings }) => {
-  return (
-    <div className="space-y-3 text-slate-700">
-      <div className="h-3 w-40 rounded-full bg-slate-200" />
-      <div className="h-3 w-64 rounded-full bg-slate-200" />
-      <div className="h-3 w-56 rounded-full bg-slate-200" />
-      <p className="text-xs text-slate-500">{settings.businessName}</p>
     </div>
   );
 };

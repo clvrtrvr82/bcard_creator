@@ -38,7 +38,11 @@ const DEFAULT_SETTINGS: AppSettings = {
   businessAddress: '123 Print St, Creative District, NY',
   businessWebsite: 'themevault.io',
   primaryColor: '#0f172a', 
-  logoUrl: ''
+  accentColor: '#0284c7',
+  logoUrl: '',
+  customerIntro: 'Create a print-ready business card with your approved layout and details.',
+  showLogo: true,
+  requireApproval: true
 };
 
 const normalizeFields = (fields: Record<string, FieldStyle>, canvasVersion?: number): Record<string, FieldStyle> => {
@@ -2076,8 +2080,8 @@ const CustomizerScreen = ({ layout, onBack, onComplete, settings, productHandle,
                 </button>
               </>
             )}
-            <button onClick={() => setShowApprovalModal(true)} className="px-4 py-2 rounded-xl bg-emerald-600 text-white text-xs font-black uppercase tracking-[0.3em] flex items-center gap-2">
-              <CheckCircle size={14} /> Approve Proof
+            <button onClick={() => settings.requireApproval ? setShowApprovalModal(true) : setStep('quantity')} className="px-4 py-2 rounded-xl text-white text-xs font-black uppercase tracking-[0.3em] flex items-center gap-2" style={{ backgroundColor: settings.accentColor }}>
+              <CheckCircle size={14} /> {settings.requireApproval ? 'Approve Proof' : 'Continue to Quantity'}
             </button>
           </div>
           <div className="mt-4 rounded-2xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-900 leading-relaxed">
@@ -2109,7 +2113,8 @@ const CustomizerScreen = ({ layout, onBack, onComplete, settings, productHandle,
         <button onClick={() => setStep('proof')} className="px-4 py-2 rounded-xl border border-slate-200 text-xs font-black uppercase tracking-[0.3em] text-slate-500">Back to proof</button>
       </div>
       <div className="grid grid-cols-1 gap-6">
-        <div className="bg-white border border-slate-200 rounded-[22px] p-5 space-y-4">
+          <div className="bg-white border border-slate-200 rounded-[22px] p-5 space-y-4">
+            {settings.customerIntro && <p className="text-sm leading-relaxed text-slate-500">{settings.customerIntro}</p>}
           {!cartEnabled && !canUseCartPermalinkFallback && (
             <div className="rounded-2xl border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm text-emerald-800">
               Share the approved proof reference with {settings.businessEmail || 'your Theme Vault rep'} so we can invoice and queue production. Variant selections below help you specify the quantity.
@@ -2612,8 +2617,8 @@ const MainLayout = () => {
       <nav className="bg-white/90 backdrop-blur-2xl border-b border-slate-200 px-6 py-4 sticky top-0 z-50 shadow-sm">
         <div className="max-w-7xl mx-auto flex justify-between items-center">
           <Link to="/" onClick={() => setFlowStep(1)} className="flex items-center gap-4 group">
-            <div className="w-14 h-14 bg-slate-900 rounded-[22px] flex items-center justify-center text-white transition-all group-hover:rotate-12 shadow-xl group-hover:scale-110" style={{ backgroundColor: settings.primaryColor }}>
-              <Layers size={30} />
+            <div className="w-14 h-14 bg-slate-900 rounded-[22px] flex items-center justify-center text-white transition-all group-hover:rotate-12 shadow-xl group-hover:scale-110 overflow-hidden" style={{ backgroundColor: settings.primaryColor }}>
+              {settings.showLogo && settings.logoUrl ? <img src={settings.logoUrl} alt="" className="h-full w-full object-contain p-2" /> : <Layers size={30} />}
             </div>
             <div>
               <span className="text-2xl font-black uppercase tracking-tighter block leading-none">{settings.appName}</span>
