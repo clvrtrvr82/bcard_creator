@@ -293,17 +293,25 @@ const deleteSupabaseState = async (stateKey) => {
 
 // Last known-good reads, served if Supabase is temporarily unreachable so an outage there doesn't 502 the whole site.
 let cachedSupabaseLayouts = null;
+let cachedSupabaseLayoutsLoaded = false;
 let cachedSupabaseSettings = null;
+let cachedSupabaseSettingsLoaded = false;
 
 const loadLayouts = async () => {
   if (!supabaseEnabled) return readStoredBrandConfigs();
   try {
     const layouts = await loadSupabaseState('layouts');
     cachedSupabaseLayouts = layouts;
+    cachedSupabaseLayoutsLoaded = true;
     return layouts;
   } catch (error) {
-    console.error('Supabase layouts read failed, serving last known-good copy.', error);
-    return cachedSupabaseLayouts;
+    // Only trust the cache as "confirmed empty" if it came from a real successful read.
+    // Otherwise a fresh restart hitting a Supabase blip would look identical to "no layouts saved" and get wiped by autosave.
+    if (cachedSupabaseLayoutsLoaded) {
+      console.error('Supabase layouts read failed, serving last known-good copy.', error);
+      return cachedSupabaseLayouts;
+    }
+    throw new Error(`Supabase layouts unavailable and no cached copy exists yet: ${error?.message || error}`);
   }
 };
 
@@ -312,10 +320,14 @@ const loadSettings = async () => {
   try {
     const settings = await loadSupabaseState('settings');
     cachedSupabaseSettings = settings;
+    cachedSupabaseSettingsLoaded = true;
     return settings;
   } catch (error) {
-    console.error('Supabase settings read failed, serving last known-good copy.', error);
-    return cachedSupabaseSettings;
+    if (cachedSupabaseSettingsLoaded) {
+      console.error('Supabase settings read failed, serving last known-good copy.', error);
+      return cachedSupabaseSettings;
+    }
+    throw new Error(`Supabase settings unavailable and no cached copy exists yet: ${error?.message || error}`);
   }
 };
 

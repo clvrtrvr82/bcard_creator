@@ -2361,9 +2361,16 @@ const MainLayout = () => {
   const layoutSaveInFlightRef = useRef(false);
   const layoutSavePendingRef = useRef<Record<string, BrandConfig> | null>(null);
   const layoutSaveTimerRef = useRef<number | null>(null);
+  const skipNextAutosaveRef = useRef(false);
 
   useEffect(() => {
     if (!layoutsHydrated || !isAdmin) return;
+    // The render where hydration sets brandConfigs also flips layoutsHydrated to true, which would otherwise
+    // immediately re-save that hydrated snapshot. Skip that one so a bad/empty hydration can never overwrite real data.
+    if (skipNextAutosaveRef.current) {
+      skipNextAutosaveRef.current = false;
+      return;
+    }
 
     // Rapid edits (e.g. dragging a field) can generate many state updates in a
     // row. Coalesce them into a single save, and never let more than one save
@@ -2418,6 +2425,7 @@ const MainLayout = () => {
         const stored = await loadPersistedLayouts();
         if (cancelled) return;
         if (stored) {
+          skipNextAutosaveRef.current = true;
           setBrandConfigs(normalizeBrandConfigs(stored));
           setLayoutsHydrated(true);
           return;
@@ -2426,6 +2434,7 @@ const MainLayout = () => {
         const legacyStored = getLegacyStoredLayouts();
         if (legacyStored) {
           const normalized = normalizeBrandConfigs(legacyStored);
+          skipNextAutosaveRef.current = true;
           setBrandConfigs(normalized);
           setLayoutsHydrated(true);
           persistLayouts(normalized).catch((error) => {
@@ -2437,11 +2446,13 @@ const MainLayout = () => {
           return;
         }
 
+        skipNextAutosaveRef.current = true;
         setBrandConfigs({});
         setLayoutsHydrated(true);
       } catch (error) {
         console.warn('Unable to hydrate persisted layouts.', error);
         if (!cancelled) {
+          skipNextAutosaveRef.current = true;
           setBrandConfigs({});
           setLayoutsHydrated(true);
         }
