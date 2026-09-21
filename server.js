@@ -74,7 +74,8 @@ const app = express();
 app.disable('x-powered-by');
 // Render sits behind a proxy; trust it so req.ip reflects the real buyer IP for Shopify-Storefront-Buyer-IP.
 app.set('trust proxy', true);
-app.use(express.json({ limit: '25mb' }));
+// Saved layouts embed uploaded fonts/images as base64 in one JSON blob, so this needs headroom as layouts grow.
+app.use(express.json({ limit: '75mb' }));
 
 const proofsDir = path.join(__dirname, 'proofs');
 if (!fs.existsSync(proofsDir)) {
@@ -1301,7 +1302,11 @@ app.get('*', (req, res, next) => {
 
 app.use((err, _req, res, _next) => {
   console.error(err);
-  res.status(500).json({ message: 'Internal server error' });
+  if (err?.type === 'entity.too.large' || err?.status === 413) {
+    return res.status(413).json({ message: 'Request too large. Try removing an unused font or image asset before saving.', detail: String(err?.message || err) });
+  }
+  const status = Number.isInteger(err?.status) ? err.status : 500;
+  res.status(status).json({ message: 'Internal server error', detail: String(err?.message || err) });
 });
 
 app.listen(PORT, HOST, () => {

@@ -1913,12 +1913,37 @@ const CustomizerScreen = ({ layout, onBack, onComplete, settings, productHandle,
     );
   };
 
+  const mobileLivePreview = step === 'form' ? (
+    <div className="lg:hidden sticky top-2 z-30 rounded-[20px] border border-slate-200 bg-white/95 p-3 shadow-[0_18px_45px_-20px_rgba(15,23,42,0.45)] backdrop-blur-sm">
+      <div className="flex items-center justify-between">
+        <div className="text-[10px] uppercase tracking-[0.35em] text-slate-400">Live Preview</div>
+        {hasBackSide && (
+          <div className="flex gap-1.5 text-[10px] font-black uppercase tracking-[0.22em]">
+            {(['front', 'back'] as const).map((side) => (
+              <button
+                key={`mobile-${side}`}
+                onClick={() => setPreviewSide(side)}
+                className={`px-2.5 py-1.5 rounded-lg border ${previewSide === side ? 'bg-slate-900 text-white border-slate-900' : 'bg-white text-slate-500 border-slate-200'}`}
+              >
+                {side}
+              </button>
+            ))}
+          </div>
+        )}
+      </div>
+      <div className="mt-2 rounded-2xl border border-slate-200 bg-slate-50 p-2 overflow-hidden">
+        {renderPreviewCard(previewSide, previewSideLayout, convertLegacyDisplayScale(0.78))}
+      </div>
+    </div>
+  ) : null;
+
   const formStep = (
     <div className="grid grid-cols-1 lg:grid-cols-[340px_minmax(0,1fr)] gap-6">
       <div className="space-y-4">
         <button onClick={onBack} className="text-slate-500 font-semibold flex items-center gap-2 text-xs uppercase tracking-[0.3em]">
           <ArrowLeft size={14} /> Back to gallery
         </button>
+        {mobileLivePreview}
         <div className="bg-white border border-slate-200 rounded-[22px] p-5 space-y-4">
           <div>
             <p className="text-xs uppercase tracking-[0.4em] text-slate-400">Step {getStepPosition('form')} of {totalSteps}</p>
@@ -2017,30 +2042,6 @@ const CustomizerScreen = ({ layout, onBack, onComplete, settings, productHandle,
       </div>
     </div>
   );
-
-  const mobileLivePreview = step === 'form' ? (
-    <div className="lg:hidden fixed inset-x-3 bottom-3 z-40 rounded-[20px] border border-slate-200 bg-white/95 p-3 shadow-[0_18px_45px_-20px_rgba(15,23,42,0.45)] backdrop-blur-sm">
-      <div className="flex items-center justify-between">
-        <div className="text-[10px] uppercase tracking-[0.35em] text-slate-400">Live Preview</div>
-        {hasBackSide && (
-          <div className="flex gap-1.5 text-[10px] font-black uppercase tracking-[0.22em]">
-            {(['front', 'back'] as const).map((side) => (
-              <button
-                key={`mobile-${side}`}
-                onClick={() => setPreviewSide(side)}
-                className={`px-2.5 py-1.5 rounded-lg border ${previewSide === side ? 'bg-slate-900 text-white border-slate-900' : 'bg-white text-slate-500 border-slate-200'}`}
-              >
-                {side}
-              </button>
-            ))}
-          </div>
-        )}
-      </div>
-      <div className="mt-2 rounded-2xl border border-slate-200 bg-slate-50 p-2 overflow-hidden">
-        {renderPreviewCard(previewSide, previewSideLayout, convertLegacyDisplayScale(0.78))}
-      </div>
-    </div>
-  ) : null;
 
   const proofStep = (
     <div className="space-y-6">
@@ -2185,11 +2186,10 @@ const CustomizerScreen = ({ layout, onBack, onComplete, settings, productHandle,
   );
 
   return (
-    <div className={`max-w-5xl mx-auto p-6 space-y-8 animate-fadeIn ${step === 'form' ? 'pb-48 lg:pb-6' : ''}`}>
+    <div className={`max-w-5xl mx-auto p-6 space-y-8 animate-fadeIn`}>
       {step === 'form' && formStep}
       {step === 'proof' && proofStep}
       {step === 'quantity' && quantityStep}
-      {mobileLivePreview}
 
       {showApprovalModal && (
         <div className="fixed inset-0 bg-slate-900/50 backdrop-blur-sm flex items-center justify-center z-50 p-4">
