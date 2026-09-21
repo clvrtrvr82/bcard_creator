@@ -584,8 +584,9 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({ brandConfigs, onBrandCo
   };
 
   const handleResetServerLayouts = async () => {
-    const confirmed = window.confirm('This will clear saved layouts on the server for this deployment. Continue?');
-    if (!confirmed) return;
+    const confirmationPhrase = 'DELETE ALL LAYOUTS';
+    const typed = window.prompt(`This permanently deletes every saved layout for this deployment. There is no backup to restore from if you proceed by mistake.\n\nType "${confirmationPhrase}" to continue.`);
+    if (typed !== confirmationPhrase) return;
 
     try {
       const response = await fetch('/api/layouts', {
@@ -1006,13 +1007,13 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({ brandConfigs, onBrandCo
               <ExternalLink size={16} />
             </button>
             <div className="rounded-2xl border border-red-200 bg-red-50 px-4 py-3 space-y-2">
-              <p className="text-[11px] font-black uppercase tracking-[0.22em] text-red-600">Recovery</p>
-              <p className="text-xs text-red-700">Use this if old/deleted layouts keep reappearing from stale server storage.</p>
+              <p className="text-[11px] font-black uppercase tracking-[0.22em] text-red-600">Danger Zone</p>
+              <p className="text-xs text-red-700">Permanently deletes every currently saved layout for this deployment. There is no backup — export layouts first if you want a copy. Only use this if you specifically intend to wipe all current data, not for clearing stale/cached layouts.</p>
               <button
                 onClick={handleResetServerLayouts}
                 className="w-full rounded-xl border border-red-300 bg-white px-3 py-2.5 text-[11px] font-black uppercase tracking-[0.24em] text-red-700"
               >
-                Reset Server Layout Storage
+                Permanently Delete All Layouts
               </button>
               <button
                 onClick={handleLoadLayoutSources}
